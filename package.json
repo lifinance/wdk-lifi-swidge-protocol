@@ -1,0 +1,81 @@
+{
+  "name": "@kenny_io/wdk-protocol-swidge-lifi",
+  "version": "0.1.0",
+  "description": "WDK Swidge module for LI.FI — lets any WDK wallet account swap and bridge tokens via LI.FI using the ISwidgeProtocol interface.",
+  "keywords": [
+    "wdk",
+    "protocol",
+    "swidge",
+    "swap",
+    "bridge",
+    "lifi",
+    "evm",
+    "erc-4337"
+  ],
+  "author": "LI.FI",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/kenny-io/wdk-lifi-swidge-protocol.git"
+  },
+  "main": "index.js",
+  "type": "module",
+  "files": [
+    "src/",
+    "examples/",
+    "index.js",
+    "bare.js",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md",
+    ".env.example"
+  ],
+  "scripts": {
+    "lint": "standard",
+    "lint:fix": "standard --fix",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathIgnorePatterns=tests/integration",
+    "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage --testPathIgnorePatterns=tests/integration",
+    "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest tests/integration --testTimeout=120000"
+  },
+  "dependencies": {
+    "@tetherto/wdk-wallet": "1.0.0-beta.9",
+    "bare-node-runtime": "^1.1.4",
+    "ethers": "6.13.5"
+  },
+  "peerDependencies": {
+    "@tetherto/wdk-wallet-evm": ">=1.0.0-beta.8",
+    "@tetherto/wdk-wallet-evm-erc-4337": ">=1.0.0-beta.5"
+  },
+  "peerDependenciesMeta": {
+    "@tetherto/wdk-wallet-evm-erc-4337": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@tetherto/wdk-wallet-evm": "1.0.0-beta.8",
+    "@tetherto/wdk-wallet-evm-erc-4337": "1.0.0-beta.5",
+    "cross-env": "10.0.0",
+    "jest": "30.0.5",
+    "standard": "17.1.2"
+  },
+  "exports": {
+    ".": {
+      "bare": "./bare.js",
+      "default": "./index.js"
+    },
+    "./package": {
+      "default": "./package.json"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "standard": {
+    "ignore": [
+      "bare.js",
+      "tests/**/*.js"
+    ]
+  }
+}
