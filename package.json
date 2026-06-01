@@ -1,6 +1,6 @@
 {
   "name": "@kenny_io/wdk-protocol-swidge-lifi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "WDK Swidge module for LI.FI — lets any WDK wallet account swap and bridge tokens via LI.FI using the ISwidgeProtocol interface.",
   "keywords": [
     "wdk",

@@ -6,6 +6,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-06-01
+
+### Fixed
+- Repository URL updated to `github.com/kenny-io/wdk-lifi-swidge-protocol`.
+- Support channel updated to `help.li.fi/hc/en-us`.
+
 ## [0.1.0] — 2026-06-01
 
 ### Added
