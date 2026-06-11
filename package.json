@@ -1,6 +1,6 @@
 {
   "name": "@kenny_io/wdk-protocol-swidge-lifi",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "WDK Swidge module for LI.FI — lets any WDK wallet account swap and bridge tokens via LI.FI using the ISwidgeProtocol interface.",
   "keywords": [
     "wdk",
@@ -19,10 +19,12 @@
     "url": "git://github.com/kenny-io/wdk-lifi-swidge-protocol.git"
   },
   "main": "index.js",
+  "types": "./types/index.d.ts",
   "type": "module",
   "files": [
     "src/",
     "examples/",
+    "types/",
     "index.js",
     "bare.js",
     "CHANGELOG.md",
@@ -34,6 +36,7 @@
   "scripts": {
     "lint": "standard",
     "lint:fix": "standard --fix",
+    "build:types": "tsc",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathIgnorePatterns=tests/integration",
     "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage --testPathIgnorePatterns=tests/integration",
     "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest tests/integration --testTimeout=120000",
@@ -61,10 +64,12 @@
     "cross-env": "10.0.0",
     "dotenv": "^16.4.7",
     "jest": "30.0.5",
-    "standard": "17.1.2"
+    "standard": "17.1.2",
+    "typescript": "^6.0.3"
   },
   "exports": {
     ".": {
+      "types": "./types/index.d.ts",
       "bare": "./bare.js",
       "default": "./index.js"
     },

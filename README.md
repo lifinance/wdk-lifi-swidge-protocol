@@ -98,6 +98,14 @@ new LifiSwidgeProtocol(account, {
   order: 'RECOMMENDED',        // 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST'
   allowBridges: ['stargate'],  // whitelist specific bridges
   denyBridges: ['across'],     // blacklist specific bridges
+
+  // Reliability (defaults shown — modeled on the LI.FI SDK)
+  timeout: 30_000,             // ms per API request attempt
+  retries: 1,                  // extra attempts on 5xx / 429 / network errors / timeouts; 0 disables
+  retryDelay: 500,             // base backoff in ms, doubled per attempt, capped at 5000
+
+  // Security (opt-in)
+  trustedContracts: true,      // require quote tx target + approval address to be known LI.FI contracts
 })
 ```
 
@@ -106,6 +114,44 @@ Fee caps can also be overridden per call:
 ```js
 await protocol.swidge(options, { maxProtocolFeeBps: 20 })
 ```
+
+## Reliability
+
+All LI.FI API calls go through a central request layer modeled on the
+[LI.FI SDK](https://github.com/lifinance/sdk):
+
+- **Timeouts** — every request is aborted after `timeout` ms (default 30s) instead of hanging.
+- **Retries** — transient failures (5xx, network errors, timeouts) are retried with exponential
+  backoff. 429 responses honor the `Retry-After` header when present.
+- **Error classification** — HTTP statuses map to typed errors: 409 → `LifiSlippageError`
+  (stale quote, request a new one), 429 → `LifiRateLimitError`, timeouts → `LifiTimeoutError`,
+  persistent network failures → `LifiNetworkError`.
+
+When polling `getSwidgeStatus()`, a `LifiStatusError` with `err.lifiStatus === 'NOT_FOUND'`
+means the transaction is not indexed yet — treat it as still pending (see
+[examples/bridge-usdt.js](examples/bridge-usdt.js)).
+
+## Security
+
+The transaction data returned by the LI.FI quote API is always structurally validated
+(valid target address, hex calldata, parseable amounts) before being forwarded to the wallet.
+
+Setting `trustedContracts` additionally requires the transaction target and approval address
+to be known LI.FI contracts, rejecting with `LifiUntrustedContractError` *before any approval
+is granted*:
+
+```js
+// Built-in allowlist: per-chain LI.FI Diamond deployments + Permit2
+new LifiSwidgeProtocol(account, { trustedContracts: true })
+
+// Extend the built-ins with additional trusted addresses per chain ID
+new LifiSwidgeProtocol(account, { trustedContracts: { 137: '0x...' } })
+```
+
+This check is opt-in to match LI.FI SDK behavior and because some chains use non-canonical
+Diamond deployments. The built-in allowlist covers the canonical address and known exceptions
+(e.g. zkSync Era); verify against [LI.FI deployments](https://github.com/lifinance/contracts/tree/main/deployments)
+before enabling on uncommon chains.
 
 ## Supported chains
 
@@ -142,8 +188,24 @@ Raw numeric chain IDs are also accepted.
 | `LifiStatusError` | LI.FI status API error or unknown id |
 | `LifiReadOnlyAccountError` | `swidge()` called with read-only or absent account |
 | `LifiUnsupportedChainError` | Unknown chain name string passed as `toChain` |
+| `LifiTimeoutError` | API request exceeded the configured `timeout` |
+| `LifiNetworkError` | Network-level failure persisted after all retries |
+| `LifiRateLimitError` | 429 from the API after retries were exhausted |
+| `LifiSlippageError` | 409 from the quote API — stale quote, request a new one (subclass of `LifiQuoteError`) |
+| `LifiValidationError` | Invalid user input or malformed API response, thrown before execution |
+| `LifiUntrustedContractError` | Quote target/approval address not in the `trustedContracts` allowlist (subclass of `LifiExecutionError`) |
 
 All errors extend `LifiProtocolError` which extends `Error`.
+
+## TypeScript
+
+Type declarations are generated from JSDoc and shipped in `types/`. Consumers get full typings
+for the protocol class, config, and all error classes. After changing public JSDoc, regenerate
+with:
+
+```bash
+npm run build:types
+```
 
 ## Support
 

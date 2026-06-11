@@ -16,6 +16,37 @@
 
 export const LIFI_API_URL = 'https://li.quest/v1'
 
+// HTTP reliability defaults, modeled on the LI.FI SDK (packages/sdk/src/utils/request.ts).
+
+/** Default timeout in ms per HTTP attempt. */
+export const DEFAULT_TIMEOUT = 30_000
+
+/** Default extra attempts on transient failures; mirrors the LI.FI SDK's requestSettings.retries. */
+export const DEFAULT_RETRIES = 1
+
+/** Default base backoff in ms, doubled per attempt. */
+export const DEFAULT_RETRY_DELAY = 500
+
+/** Cap in ms on the exponential backoff between retries. */
+export const MAX_RETRY_DELAY = 5_000
+
+/** Cap in ms on honored Retry-After header values. */
+export const MAX_RETRY_AFTER = 60_000
+
+/**
+ * LI.FI Diamond contract addresses (lowercased), keyed by chain ID.
+ * 'default' is the canonical CREATE2 deployment shared by most EVM chains.
+ * Chains where CREATE2 derivation differs get explicit entries.
+ * Source: https://github.com/lifinance/contracts/tree/main/deployments
+ */
+export const LIFI_DIAMOND_ADDRESSES = {
+  default: '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae',
+  324: '0x341e94069f53234fe6dabef707ad424830525715' // zkSync Era
+}
+
+/** Uniswap Permit2 — appears as estimate.approvalAddress on permit-based routes. */
+export const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+
 /**
  * Convenience map from WDK chain name strings to LI.FI numeric chain IDs.
  * Sourced from GET https://li.quest/v1/chains — all chains LI.FI currently supports.

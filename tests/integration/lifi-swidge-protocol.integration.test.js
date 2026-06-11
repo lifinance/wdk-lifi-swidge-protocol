@@ -33,9 +33,9 @@
  *   node --experimental-vm-modules node_modules/.bin/jest tests/integration --testTimeout=60000
  */
 
-import { describe, test, expect, beforeAll } from '@jest/globals'
+import { describe, test, expect, beforeEach } from '@jest/globals'
 import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
-import { LifiSwidgeProtocol, LifiQuoteError, LifiStatusError } from '../../index.js'
+import { LifiSwidgeProtocol } from '../../index.js'
 
 // ── Tier 2 env vars ────────────────────────────────────────────────────────────
 
@@ -62,10 +62,10 @@ const USDT0_ARB    = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9' // USDT0 on Ar
 
 // ── Tier 1 — Discovery (always run) ───────────────────────────────────────────
 
-describe('LifiSwidgeProtocol — integration tier 1: discovery (no credentials)', () => {
+describe('@kenny_io/wdk-protocol-swidge-lifi — integration tier 1: discovery (no credentials)', () => {
   let protocol
 
-  beforeAll(() => {
+  beforeEach(() => {
     protocol = new LifiSwidgeProtocol()
   })
 
@@ -134,17 +134,17 @@ describe('LifiSwidgeProtocol — integration tier 1: discovery (no credentials)'
     // The all-zeros hash is intentionally avoided: LI.FI resolves it to a real tx.
     await expect(
       protocol.getSwidgeStatus('0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef')
-    ).rejects.toThrow(LifiStatusError)
+    ).rejects.toThrow(/LI.FI status request failed|No swidge found for id/)
   }, 30_000)
 })
 
 // ── Tier 2 — Quotes (mainnet tokens, no funds required) ───────────────────────
 
 const describeTier2 = SKIP_TIER2 ? describe.skip : describe
-describeTier2('LifiSwidgeProtocol — integration tier 2: quotes (mainnet, no funds)', () => {
+describeTier2('@kenny_io/wdk-protocol-swidge-lifi — integration tier 2: quotes (mainnet, no funds)', () => {
   let protocol
 
-  beforeAll(() => {
+  beforeEach(() => {
     const account = new WalletAccountEvm(TEST_SEED, "0'/0/0", { provider: RPC_URL })
     protocol = new LifiSwidgeProtocol(account)
   })
@@ -244,32 +244,30 @@ describeTier2('LifiSwidgeProtocol — integration tier 2: quotes (mainnet, no fu
         toChain: 999999,       // non-existent chain ID
         fromTokenAmount: 10_000_000n
       })
-    ).rejects.toThrow(LifiQuoteError)
+    ).rejects.toThrow(/No destination token found|Failed to search tokens|LI.FI quote request failed/)
   }, 30_000)
 })
 
 // ── Tier 3 — Execution (funded Sepolia wallet required) ───────────────────────
 
 const describeTier3 = SKIP_TIER3 ? describe.skip : describe
-describeTier3('LifiSwidgeProtocol — integration tier 3: execution (funded Sepolia)', () => {
+describeTier3('@kenny_io/wdk-protocol-swidge-lifi — integration tier 3: execution (funded Sepolia)', () => {
   let account
   let protocol
 
   // Sepolia test tokens
   const USDC_SEPOLIA = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'
 
-  beforeAll(() => {
+  const KNOWN_TX = process.env.INTEGRATION_KNOWN_TX_HASH
+  // Skip (not silently pass) when no known tx hash is configured.
+  const testIfKnownTx = KNOWN_TX ? test : test.skip
+
+  beforeEach(() => {
     account = new WalletAccountEvm(SEED_PHRASE, "0'/0/0", { provider: RPC_URL })
     protocol = new LifiSwidgeProtocol(account)
   })
 
-  test('getSwidgeStatus maps a known completed tx to a terminal SwidgeStatus', async () => {
-    const KNOWN_TX = process.env.INTEGRATION_KNOWN_TX_HASH
-    if (!KNOWN_TX) {
-      console.warn('  Skipping — set INTEGRATION_KNOWN_TX_HASH to a completed testnet tx hash')
-      return
-    }
-
+  testIfKnownTx('getSwidgeStatus maps a known completed tx to a terminal SwidgeStatus', async () => {
     const { status, transactions } = await protocol.getSwidgeStatus(KNOWN_TX)
 
     expect(['completed', 'partial', 'refunded', 'failed']).toContain(status)

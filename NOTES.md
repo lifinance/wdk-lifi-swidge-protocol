@@ -117,8 +117,50 @@ Constructor names survive across module instances and are immune to dual-install
 | `LifiStatusError` | Status API error, or `NOT_FOUND`/`INVALID` id |
 | `LifiReadOnlyAccountError` | `swidge()` called without a writable account |
 | `LifiUnsupportedChainError` | Unknown chain name string passed as `toChain` |
+| `LifiTimeoutError` | Request exceeded the configured timeout |
+| `LifiNetworkError` | Network failure persisted after retries |
+| `LifiRateLimitError` | 429 persisted after retries |
+| `LifiSlippageError` | 409 from `/quote` — extends `LifiQuoteError` |
+| `LifiValidationError` | Bad user input or malformed API response |
+| `LifiUntrustedContractError` | Allowlist rejection — extends `LifiExecutionError` |
 
-All extend `LifiProtocolError`. The split between user-actionable errors (`LifiReadOnlyAccountError`, `LifiUnsupportedChainError`) and developer errors lets wallet UIs surface appropriate messages rather than raw stack traces.
+All extend `LifiProtocolError`. The split between user-actionable errors (`LifiReadOnlyAccountError`, `LifiUnsupportedChainError`) and developer errors lets wallet UIs surface appropriate messages rather than raw stack traces. `LifiSlippageError` and `LifiUntrustedContractError` subclass existing families so pre-existing `catch` blocks keep working.
+
+---
+
+## HTTP reliability layer
+
+All six API call sites go through `request()` in `src/request.js`, modeled on the LI.FI SDK's `request()` wrapper (`packages/sdk/src/utils/request.ts`) and its status-code classification (`packages/sdk/src/errors/httpError.ts`). The SDK is a code reference only — the Tether contributor requirement is API-based with no SDK dependency.
+
+| Condition | Behavior |
+|---|---|
+| Network error / timeout | Retry with backoff; exhausted → `LifiNetworkError` / `LifiTimeoutError` |
+| 429 | Retry after `Retry-After` (capped at 60s) or backoff; exhausted → `LifiRateLimitError` |
+| 5xx | Retry with backoff; exhausted → endpoint error class (`LifiQuoteError` / `LifiStatusError`) |
+| 409 | `LifiSlippageError` immediately — a stale quote cannot succeed by retrying the same URL |
+| Any other non-OK (incl. missing status) | Endpoint error class immediately, preserving the pre-existing message shape |
+
+Defaults: 30s timeout per attempt, 1 retry (mirrors the SDK's `requestSettings.retries`), 500ms base backoff doubled per attempt and capped at 5s.
+
+**Why `Promise.race` for timeouts:** the timeout uses `AbortController` *and* a racing rejection. Bare runtime fetch polyfills and test mocks may ignore the abort signal entirely; the race guarantees the timeout fires regardless. The timer is cleared in `finally` so no handles leak.
+
+**Why a missing status code is non-retryable:** a response with `ok: false` but no `status` cannot be classified as transient, so it fails immediately with the endpoint's error class. This also keeps the error-path behavior identical for any consumer (or test) constructing minimal response objects.
+
+**Status polling:** `getSwidgeStatus` throws on `NOT_FOUND`/`INVALID` (unchanged), but the error now carries `err.lifiStatus` so polling loops can distinguish "not indexed yet — keep waiting" (`NOT_FOUND`) from "bad id — stop" (`INVALID`) without parsing messages. The SDK's `waitForTransactionStatus` makes the same distinction. See `examples/bridge-usdt.js` for the recommended loop.
+
+---
+
+## Quote transaction validation
+
+`validateQuoteTransaction` runs in `swidge()` after the fee-cap check and **before `_handleApproval`** — an untrusted target must be rejected before any allowance is granted, not merely before the bridge tx.
+
+Structural checks always run: `transactionRequest.to` must be a valid address, `data` must be hex, `value`/`gasLimit` must parse as BigInt. These are free and cannot false-positive.
+
+The contract allowlist (`trustedContracts` config) is **opt-in** for two reasons:
+1. **SDK parity** — the LI.FI SDK forwards `transactionRequest.to` to the wallet as-is (verified against `packages/sdk-provider-ethereum/src/core/tasks/`); TLS to `li.quest` is its trust boundary.
+2. **Non-canonical deployments** — the Diamond lives at the canonical CREATE2 address on most chains, but not all (zkSync Era differs because its CREATE2 derivation differs). A default-on check would falsely reject valid routes on chains missing from the built-in list.
+
+The built-in allowlist (`LIFI_DIAMOND_ADDRESSES` in `lifi-config.js`) holds the canonical address plus known exceptions, sourced from `github.com/lifinance/contracts/deployments`. Permit2 is pre-allowlisted because it appears as `estimate.approvalAddress` on permit-based routes. Per-chain entries *replace* the default (the canonical address is not valid on zkSync); user-supplied `trustedContracts` entries *extend* the set.
 
 ---
 

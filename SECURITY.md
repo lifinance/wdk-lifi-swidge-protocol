@@ -22,7 +22,7 @@ We will acknowledge receipt within 2 business days and aim to ship a fix within 
 This module handles token approvals and transaction construction on behalf of wallet users. Key areas of concern:
 
 - ERC-20 allowance logic (approval amounts must be exact minimum — never infinite).
-- Transaction data forwarded from the LI.FI API — verify the `to` address matches the expected LI.FI Diamond contract before production use.
+- Transaction data forwarded from the LI.FI API. Structural validation (valid target address, hex calldata, parseable amounts) always runs before any transaction is built. For production use, enable the `trustedContracts` config so the transaction target and approval address are additionally checked against a per-chain allowlist of LI.FI Diamond deployments — an untrusted address is rejected with `LifiUntrustedContractError` before any approval is granted. When `trustedContracts` is unset (the default, matching LI.FI SDK behavior), the transport layer (TLS to `li.quest`) is the trust boundary for these fields.
 - API key and seed phrases must never be committed to version control. Use `.env` files and the provided `.env.example` as a template.
 
 ## Out of Scope

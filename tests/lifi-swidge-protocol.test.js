@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { beforeEach, describe, expect, jest, test } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import * as ethers from 'ethers'
 
@@ -20,13 +20,13 @@ import { WalletAccountEvm, WalletAccountReadOnlyEvm } from '@tetherto/wdk-wallet
 import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@tetherto/wdk-wallet-evm-erc-4337'
 
 // Test-only mnemonic. Never funded. Only used with mock providers.
-const SEED = 'test test test test test test test test test test test junk'
-const USER_ADDRESS = '0xa460AEbce0d3A4BecAd8ccf9D6D4861296c503Bd'
+const SEED = 'cook voyage document eight skate token alien guide drink uncle term abuse'
+const USER_ADDRESS = '0x405005C7c4422390F4B334F64Cf20E0b767131d0'
 const TOKEN = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9'
 const APPROVAL_ADDRESS = '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE'
 
-const MOCK_QUOTE = {
-  id: 'mock-quote-id',
+const DUMMY_QUOTE = {
+  id: 'dummy-quote-id',
   type: 'LIFI',
   tool: 'across',
   toolDetails: { name: 'Stargate' },
@@ -78,7 +78,7 @@ const MOCK_QUOTE = {
   }
 }
 
-const MOCK_STATUS_DONE = {
+const DUMMY_STATUS_DONE = {
   transactionId: '0xabc123',
   status: 'DONE',
   substatus: 'COMPLETED',
@@ -87,14 +87,14 @@ const MOCK_STATUS_DONE = {
   receiving: { txHash: '0xfedcba0987654321' }
 }
 
-const MOCK_CHAINS = {
+const DUMMY_CHAINS = {
   chains: [
     { id: 1, name: 'Ethereum', chainType: 'EVM', nativeToken: { symbol: 'ETH' } },
     { id: 42161, name: 'Arbitrum One', chainType: 'EVM', nativeToken: { symbol: 'ETH' } }
   ]
 }
 
-const MOCK_SOURCE_TOKEN = {
+const DUMMY_SOURCE_TOKEN = {
   symbol: 'USDT',
   decimals: 6,
   coinKey: 'USDT',
@@ -102,7 +102,7 @@ const MOCK_SOURCE_TOKEN = {
   tags: ['stablecoin']
 }
 
-const MOCK_DEST_TOKEN = {
+const DUMMY_DEST_TOKEN = {
   address: TOKEN,
   symbol: 'USDT0',
   decimals: 6,
@@ -111,15 +111,40 @@ const MOCK_DEST_TOKEN = {
   tags: ['stablecoin']
 }
 
-const MOCK_TOKENS = {
+const DUMMY_TOKENS = {
   tokens: {
     1: [
       { address: TOKEN, symbol: 'USDT', decimals: 6, name: 'Tether USD' }
     ],
-    42161: [MOCK_DEST_TOKEN],
-    8453: [{ ...MOCK_DEST_TOKEN, symbol: 'USDT', coinKey: 'USDT', priceUSD: '1.00' }]
+    42161: [DUMMY_DEST_TOKEN],
+    8453: [{ ...DUMMY_DEST_TOKEN, symbol: 'USDT', coinKey: 'USDT', priceUSD: '1.00' }]
   }
 }
+
+const LIFI_API = 'https://li.quest/v1'
+
+// Second fetch argument produced by the request layer; the abort signal is the
+// only value that genuinely cannot be predicted.
+const FETCH_OPTS = { headers: {}, signal: expect.any(AbortSignal) }
+
+// Fees derived deterministically from DUMMY_QUOTE by the fee mapping.
+const EXPECTED_FEES = [
+  {
+    type: 'network',
+    amount: 155_728_000_000_000n,
+    token: '0x0000000000000000000000000000000000000000',
+    chain: 1,
+    description: 'Network fee'
+  },
+  {
+    type: 'protocol',
+    amount: 2300n,
+    token: TOKEN,
+    chain: 1,
+    included: true,
+    description: 'LIFI Fixed Fee'
+  }
+]
 
 const getNetworkMock = jest.fn()
 const waitForTransactionMock = jest.fn().mockResolvedValue({})
@@ -138,7 +163,12 @@ jest.unstable_mockModule('ethers', () => ({
   })
 }))
 
-const { LifiSwidgeProtocol, LifiReadOnlyAccountError, LifiConfigurationError, LifiExecutionError, LifiQuoteError, LifiStatusError, LifiUnsupportedChainError } = await import('../index.js')
+const {
+  LifiSwidgeProtocol,
+  LifiQuoteError,
+  LifiStatusError,
+  LifiSlippageError
+} = await import('../index.js')
 
 // ─── Helper: default fetch mock ──────────────────────────────────────────────
 
@@ -147,30 +177,29 @@ function mockFetch (overrides = {}) {
     if (overrides[url]) return Promise.resolve(overrides[url])
     // Check /tokens before /token — /tokens URL also matches /token substring
     if (url.includes('/tokens')) {
-      return Promise.resolve({ ok: true, json: async () => MOCK_TOKENS })
+      return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
     }
     if (url.includes('/token')) {
-      return Promise.resolve({ ok: true, json: async () => MOCK_SOURCE_TOKEN })
+      return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
     }
     if (url.includes('/chains')) {
-      return Promise.resolve({ ok: true, json: async () => MOCK_CHAINS })
+      return Promise.resolve({ ok: true, json: async () => DUMMY_CHAINS })
     }
     if (url.includes('/status')) {
-      return Promise.resolve({ ok: true, json: async () => MOCK_STATUS_DONE })
+      return Promise.resolve({ ok: true, json: async () => DUMMY_STATUS_DONE })
     }
-    return Promise.resolve({ ok: true, json: async () => MOCK_QUOTE })
+    return Promise.resolve({ ok: true, json: async () => DUMMY_QUOTE })
   })
 }
 
 // ─── EOA account suite ────────────────────────────────────────────────────────
 
-describe('LifiSwidgeProtocol', () => {
+describe('@kenny_io/wdk-protocol-swidge-lifi', () => {
   describe('with WalletAccountEvm (EOA)', () => {
     let account, protocol
 
     beforeEach(() => {
-      account = new WalletAccountEvm(SEED, "0'/0/0", { provider: 'https://mock-rpc-url.com' })
-      account.getAddress = jest.fn().mockResolvedValue(USER_ADDRESS)
+      account = new WalletAccountEvm(SEED, "0'/0/0", { provider: 'https://dummy-rpc-url.com' })
       protocol = new LifiSwidgeProtocol(account)
       getNetworkMock.mockResolvedValue({ chainId: 1n })
       mockFetch()
@@ -192,8 +221,8 @@ describe('LifiSwidgeProtocol', () => {
         expect(result.toTokenAmount).toBe(999_700n)
         expect(result.toTokenAmountMin).toBe(994_700n)
         expect(result.estimatedDuration).toBe(49)
-        expect(result.priceImpact).toBeCloseTo(0.0003)
-        expect(Array.isArray(result.fees)).toBe(true)
+        expect(result.priceImpact).toBe(0.0003)
+        expect(result.fees).toEqual(EXPECTED_FEES)
       })
 
       test('fees array contains network and protocol entries', async () => {
@@ -201,15 +230,7 @@ describe('LifiSwidgeProtocol', () => {
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
         })
 
-        const network = fees.find(f => f.type === 'network')
-        const protocol_ = fees.find(f => f.type === 'protocol')
-
-        expect(network).toBeDefined()
-        expect(network.amount).toBe(155_728_000_000_000n)
-
-        expect(protocol_).toBeDefined()
-        expect(protocol_.amount).toBe(2300n)
-        expect(protocol_.included).toBe(true)
+        expect(fees).toEqual(EXPECTED_FEES)
       })
 
       test('resolves toToken to destination address when fromToken === toToken cross-chain', async () => {
@@ -217,15 +238,12 @@ describe('LifiSwidgeProtocol', () => {
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
         })
 
-        const tokenCall = global.fetch.mock.calls.find(([url]) => url.includes('/token'))[0]
-        expect(tokenCall).toContain(`token=${TOKEN}`)
-        expect(tokenCall).toContain('chain=1')
-
-        const tokensSearch = global.fetch.mock.calls.find(([url]) => url.includes('/tokens'))[0]
-        expect(tokensSearch).toContain('chains=42161')
-
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain(`toToken=${TOKEN}`)
+        expect(global.fetch).toHaveBeenCalledWith(`${LIFI_API}/token?chain=1&token=${TOKEN}`, FETCH_OPTS)
+        expect(global.fetch).toHaveBeenCalledWith(`${LIFI_API}/tokens?chains=42161&search=USDT&limit=20`, FETCH_OPTS)
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
+          FETCH_OPTS
+        )
       })
 
       test('skips token resolution when toToken differs from fromToken', async () => {
@@ -238,8 +256,10 @@ describe('LifiSwidgeProtocol', () => {
         const tokenCalls = global.fetch.mock.calls.filter(([url]) => url.includes('/token'))
         expect(tokenCalls).toHaveLength(0)
 
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain(`toToken=${OTHER_TOKEN}`)
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${OTHER_TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
+          FETCH_OPTS
+        )
       })
 
       test('skips token resolution when toToken is already a symbol', async () => {
@@ -250,8 +270,10 @@ describe('LifiSwidgeProtocol', () => {
         const tokenCalls = global.fetch.mock.calls.filter(([url]) => url.includes('/token'))
         expect(tokenCalls).toHaveLength(0)
 
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain('toToken=USDC')
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=10&fromToken=${TOKEN}&toToken=USDC&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
+          FETCH_OPTS
+        )
       })
 
       test('omits toChain param when not provided (same-chain swap)', async () => {
@@ -259,9 +281,10 @@ describe('LifiSwidgeProtocol', () => {
           fromToken: TOKEN, toToken: 'USDC', fromTokenAmount: 1_000_000n
         })
 
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain('fromChain=1')
-        expect(quoteCall).toContain('toChain=1')
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=1&fromToken=${TOKEN}&toToken=USDC&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
+          FETCH_OPTS
+        )
       })
 
       test('accepts a raw numeric toChain ID', async () => {
@@ -269,8 +292,10 @@ describe('LifiSwidgeProtocol', () => {
           fromToken: TOKEN, toToken: TOKEN, toChain: 8453, fromTokenAmount: 1_000_000n
         })
 
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain('toChain=8453')
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=8453&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
+          FETCH_OPTS
+        )
       })
 
       test('forwards slippage to the quote API', async () => {
@@ -278,8 +303,10 @@ describe('LifiSwidgeProtocol', () => {
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n, slippage: 0.01
         })
 
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain('slippage=0.01')
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&slippage=0.01`,
+          FETCH_OPTS
+        )
       })
 
       test('forwards order config to the quote API', async () => {
@@ -289,8 +316,10 @@ describe('LifiSwidgeProtocol', () => {
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
         })
 
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain('order=FASTEST')
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&order=FASTEST`,
+          FETCH_OPTS
+        )
       })
 
       test('forwards allowBridges and denyBridges to the quote API', async () => {
@@ -303,20 +332,21 @@ describe('LifiSwidgeProtocol', () => {
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
         })
 
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain('allowBridges=stargate%2Ccctp')
-        expect(quoteCall).toContain('denyBridges=across')
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&allowBridges=stargate%2Ccctp&denyBridges=across`,
+          FETCH_OPTS
+        )
       })
 
       test('returns empty fees arrays when estimate arrays are empty', async () => {
         global.fetch = jest.fn().mockImplementation((url) => {
-          if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => MOCK_TOKENS })
-          if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => MOCK_SOURCE_TOKEN })
+          if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
+          if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
           return Promise.resolve({
             ok: true,
             json: async () => ({
-              ...MOCK_QUOTE,
-              estimate: { ...MOCK_QUOTE.estimate, feeCosts: [], gasCosts: [] }
+              ...DUMMY_QUOTE,
+              estimate: { ...DUMMY_QUOTE.estimate, feeCosts: [], gasCosts: [] }
             })
           })
         })
@@ -333,47 +363,47 @@ describe('LifiSwidgeProtocol', () => {
 
         await expect(noProvider.quoteSwidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiConfigurationError)
+        })).rejects.toThrow('A connected provider is required to fetch quotes.')
       })
 
       test('throws LifiUnsupportedChainError for unknown chain name', async () => {
         await expect(protocol.quoteSwidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'unknown-chain', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiUnsupportedChainError)
+        })).rejects.toThrow("Chain 'unknown-chain' is not in the supported chains map.")
       })
 
       test('throws LifiQuoteError when quote API returns non-OK', async () => {
         global.fetch = jest.fn().mockImplementation((url) => {
-          if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => MOCK_TOKENS })
-          if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => MOCK_SOURCE_TOKEN })
+          if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
+          if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
           return Promise.resolve({ ok: false, statusText: 'Bad Request', json: async () => ({ message: 'Invalid params' }) })
         })
 
         await expect(protocol.quoteSwidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiQuoteError)
+        })).rejects.toThrow('LI.FI quote request failed: Invalid params')
       })
 
       test('throws LifiQuoteError when token resolution returns non-OK', async () => {
         global.fetch = jest.fn().mockImplementation((url) => {
           if (url.includes('/token')) return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found' })
-          return Promise.resolve({ ok: true, json: async () => MOCK_QUOTE })
+          return Promise.resolve({ ok: true, json: async () => DUMMY_QUOTE })
         })
 
         await expect(protocol.quoteSwidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiQuoteError)
+        })).rejects.toThrow(`Failed to resolve token for ${TOKEN} on chain 1`)
       })
 
       test('throws LifiQuoteError when token resolution returns no symbol', async () => {
         global.fetch = jest.fn().mockImplementation((url) => {
           if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => ({}) })
-          return Promise.resolve({ ok: true, json: async () => MOCK_QUOTE })
+          return Promise.resolve({ ok: true, json: async () => DUMMY_QUOTE })
         })
 
         await expect(protocol.quoteSwidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiQuoteError)
+        })).rejects.toThrow(`LI.FI returned no symbol for token ${TOKEN} on chain 1`)
       })
     })
 
@@ -397,9 +427,12 @@ describe('LifiSwidgeProtocol', () => {
         expect(result.hash).toBe('dummy-bridge-hash')
         expect(result.fromTokenAmount).toBe(1_000_000n)
         expect(result.toTokenAmount).toBe(999_700n)
-        expect(Array.isArray(result.fees)).toBe(true)
-        expect(result.fees.length).toBeGreaterThan(0)
-        expect(Array.isArray(result.transactions)).toBe(true)
+        expect(result.toTokenAmountMin).toBe(994_700n)
+        expect(result.fees).toEqual(EXPECTED_FEES)
+        expect(result.transactions).toEqual([
+          { hash: 'dummy-approve-hash', chain: 1, type: 'approval' },
+          { hash: 'dummy-bridge-hash', chain: 1, type: 'source' }
+        ])
       })
 
       test('transactions array includes approval and source entries', async () => {
@@ -408,13 +441,10 @@ describe('LifiSwidgeProtocol', () => {
           recipient: USER_ADDRESS, fromTokenAmount: 1_000_000n
         })
 
-        const approvalTx = result.transactions.find(t => t.type === 'approval')
-        const sourceTx = result.transactions.find(t => t.type === 'source')
-
-        expect(approvalTx).toBeDefined()
-        expect(approvalTx.hash).toBe('dummy-approve-hash')
-        expect(sourceTx).toBeDefined()
-        expect(sourceTx.hash).toBe('dummy-bridge-hash')
+        expect(result.transactions).toEqual([
+          { hash: 'dummy-approve-hash', chain: 1, type: 'approval' },
+          { hash: 'dummy-bridge-hash', chain: 1, type: 'source' }
+        ])
       })
 
       test('calls quote API with correct params', async () => {
@@ -423,21 +453,19 @@ describe('LifiSwidgeProtocol', () => {
           recipient: USER_ADDRESS, fromTokenAmount: 1_000_000n
         })
 
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain('fromChain=1')
-        expect(quoteCall).toContain('toChain=42161')
-        expect(quoteCall).toContain(`fromToken=${TOKEN}`)
-        expect(quoteCall).toContain('fromAmount=1000000')
-        expect(quoteCall).toContain(`toToken=${TOKEN}`)
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}`,
+          FETCH_OPTS
+        )
       })
 
       test('skips approval when skipApproval is true', async () => {
         global.fetch = jest.fn().mockImplementation((url) => {
-          if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => MOCK_TOKENS })
-          if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => MOCK_SOURCE_TOKEN })
+          if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
+          if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
           return Promise.resolve({
             ok: true,
-            json: async () => ({ ...MOCK_QUOTE, estimate: { ...MOCK_QUOTE.estimate, skipApproval: true } })
+            json: async () => ({ ...DUMMY_QUOTE, estimate: { ...DUMMY_QUOTE.estimate, skipApproval: true } })
           })
         })
 
@@ -502,7 +530,7 @@ describe('LifiSwidgeProtocol', () => {
 
         await expect(capped.swidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiExecutionError)
+        })).rejects.toThrow('Protocol fee exceeds maxProtocolFeeBps limit.')
 
         expect(account.sendTransaction).not.toHaveBeenCalled()
       })
@@ -513,7 +541,7 @@ describe('LifiSwidgeProtocol', () => {
 
         await expect(capped.swidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiExecutionError)
+        })).rejects.toThrow('Network fee exceeds maxNetworkFeeBps limit.')
 
         expect(account.sendTransaction).not.toHaveBeenCalled()
       })
@@ -524,17 +552,17 @@ describe('LifiSwidgeProtocol', () => {
         await expect(uncapped.swidge(
           { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
           { maxProtocolFeeBps: 1 }
-        )).rejects.toThrow(LifiExecutionError)
+        )).rejects.toThrow('Protocol fee exceeds maxProtocolFeeBps limit.')
       })
 
       test('throws LifiReadOnlyAccountError when account is read-only', async () => {
         const readOnly = new LifiSwidgeProtocol(
-          new WalletAccountReadOnlyEvm(USER_ADDRESS, { provider: 'https://mock-rpc-url.com' })
+          new WalletAccountReadOnlyEvm(USER_ADDRESS, { provider: 'https://dummy-rpc-url.com' })
         )
 
         await expect(readOnly.swidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiReadOnlyAccountError)
+        })).rejects.toThrow('swidge() requires a writable account.')
       })
 
       test('throws LifiConfigurationError when no provider is set', async () => {
@@ -542,13 +570,13 @@ describe('LifiSwidgeProtocol', () => {
 
         await expect(noProvider.swidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiConfigurationError)
+        })).rejects.toThrow('A connected provider is required to execute operations.')
       })
 
       test('throws LifiUnsupportedChainError for unknown chain name', async () => {
         await expect(protocol.swidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'unknown-chain', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiUnsupportedChainError)
+        })).rejects.toThrow("Chain 'unknown-chain' is not in the supported chains map.")
 
         expect(account.sendTransaction).not.toHaveBeenCalled()
       })
@@ -561,20 +589,22 @@ describe('LifiSwidgeProtocol', () => {
           fromToken: TOKEN, toToken: TOKEN, toChain: 8453, fromTokenAmount: 1_000_000n
         })
 
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain('toChain=8453')
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=8453&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}`,
+          FETCH_OPTS
+        )
       })
 
       test('excludes APPROVE-type gas costs from network fees', async () => {
         global.fetch = jest.fn().mockImplementation((url) => {
-          if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => MOCK_TOKENS })
-          if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => MOCK_SOURCE_TOKEN })
+          if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
+          if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
           return Promise.resolve({
             ok: true,
             json: async () => ({
-              ...MOCK_QUOTE,
+              ...DUMMY_QUOTE,
               estimate: {
-                ...MOCK_QUOTE.estimate,
+                ...DUMMY_QUOTE.estimate,
                 gasCosts: [
                   { type: 'APPROVE', amount: '50000000000000', amountUSD: '0.13', token: { symbol: 'ETH' } },
                   { type: 'SEND', amount: '155728000000000', amountUSD: '0.41', token: { symbol: 'ETH' } }
@@ -604,23 +634,24 @@ describe('LifiSwidgeProtocol', () => {
         const result = await protocol.getSwidgeStatus('0xabc123', { fromChain: 1, toChain: 42161 })
 
         expect(result.status).toBe('completed')
-        expect(result.transactions).toHaveLength(2)
-        expect(result.transactions[0]).toMatchObject({ hash: '0x1234567890abcdef', type: 'source' })
-        expect(result.transactions[1]).toMatchObject({ hash: '0xfedcba0987654321', type: 'destination' })
+        expect(result.transactions).toEqual([
+          { hash: '0x1234567890abcdef', chain: 1, type: 'source' },
+          { hash: '0xfedcba0987654321', chain: 42161, type: 'destination' }
+        ])
       })
 
       test('includes fromChain and toChain in status request', async () => {
         await protocol.getSwidgeStatus('0xabc123', { fromChain: 1, toChain: 42161 })
 
-        const call = global.fetch.mock.calls.find(([url]) => url.includes('/status'))[0]
-        expect(call).toContain('txHash=0xabc123')
-        expect(call).toContain('fromChain=1')
-        expect(call).toContain('toChain=42161')
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/status?txHash=0xabc123&fromChain=1&toChain=42161`,
+          FETCH_OPTS
+        )
       })
 
       test('maps DONE/PARTIAL to "partial"', async () => {
         global.fetch = jest.fn().mockResolvedValue({
-          ok: true, json: async () => ({ ...MOCK_STATUS_DONE, substatus: 'PARTIAL' })
+          ok: true, json: async () => ({ ...DUMMY_STATUS_DONE, substatus: 'PARTIAL' })
         })
         const result = await protocol.getSwidgeStatus('0xabc123')
         expect(result.status).toBe('partial')
@@ -628,7 +659,7 @@ describe('LifiSwidgeProtocol', () => {
 
       test('maps DONE/REFUNDED to "refunded"', async () => {
         global.fetch = jest.fn().mockResolvedValue({
-          ok: true, json: async () => ({ ...MOCK_STATUS_DONE, substatus: 'REFUNDED' })
+          ok: true, json: async () => ({ ...DUMMY_STATUS_DONE, substatus: 'REFUNDED' })
         })
         const result = await protocol.getSwidgeStatus('0xabc123')
         expect(result.status).toBe('refunded')
@@ -636,7 +667,7 @@ describe('LifiSwidgeProtocol', () => {
 
       test('maps DONE/NOT_PROCESSABLE_REFUND_NEEDED to "refund-pending"', async () => {
         global.fetch = jest.fn().mockResolvedValue({
-          ok: true, json: async () => ({ ...MOCK_STATUS_DONE, substatus: 'NOT_PROCESSABLE_REFUND_NEEDED' })
+          ok: true, json: async () => ({ ...DUMMY_STATUS_DONE, substatus: 'NOT_PROCESSABLE_REFUND_NEEDED' })
         })
         const result = await protocol.getSwidgeStatus('0xabc123')
         expect(result.status).toBe('refund-pending')
@@ -672,7 +703,7 @@ describe('LifiSwidgeProtocol', () => {
         })
 
         await expect(protocol.getSwidgeStatus('0xbad'))
-          .rejects.toThrow(LifiStatusError)
+          .rejects.toThrow('No swidge found for id: 0xbad (LI.FI status: NOT_FOUND)')
       })
 
       test('throws LifiStatusError when API returns non-OK', async () => {
@@ -681,7 +712,7 @@ describe('LifiSwidgeProtocol', () => {
         })
 
         await expect(protocol.getSwidgeStatus('0xbad'))
-          .rejects.toThrow(LifiStatusError)
+          .rejects.toThrow('LI.FI status request failed: Transaction not found')
       })
     })
 
@@ -691,16 +722,19 @@ describe('LifiSwidgeProtocol', () => {
       test('returns array of SwidgeSupportedChain objects', async () => {
         const chains = await protocol.getSupportedChains()
 
-        expect(chains).toHaveLength(2)
-        expect(chains[0]).toMatchObject({ id: 1, name: 'Ethereum', type: 'evm', nativeToken: 'ETH' })
-        expect(chains[1]).toMatchObject({ id: 42161, name: 'Arbitrum One', type: 'evm', nativeToken: 'ETH' })
+        expect(chains).toEqual([
+          { id: 1, name: 'Ethereum', type: 'evm', nativeToken: 'ETH' },
+          { id: 42161, name: 'Arbitrum One', type: 'evm', nativeToken: 'ETH' }
+        ])
       })
 
       test('calls the chains API with all chain types', async () => {
         await protocol.getSupportedChains()
 
-        const call = global.fetch.mock.calls.find(([url]) => url.includes('/chains'))[0]
-        expect(call).toContain('chainTypes=EVM')
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/chains?chainTypes=EVM%2CSVM%2CUTXO%2CMVM%2CTVM`,
+          FETCH_OPTS
+        )
       })
 
       test('throws LifiQuoteError when chains API returns non-OK', async () => {
@@ -708,7 +742,7 @@ describe('LifiSwidgeProtocol', () => {
           ok: false, statusText: 'Service Unavailable', json: async () => ({})
         })
 
-        await expect(protocol.getSupportedChains()).rejects.toThrow(LifiQuoteError)
+        await expect(protocol.getSupportedChains()).rejects.toThrow('LI.FI chains request failed: Service Unavailable')
       })
     })
 
@@ -718,29 +752,23 @@ describe('LifiSwidgeProtocol', () => {
       test('returns flat array of SwidgeSupportedToken objects', async () => {
         const tokens = await protocol.getSupportedTokens()
 
-        expect(tokens.length).toBeGreaterThanOrEqual(1)
-        expect(tokens[0]).toMatchObject({
-          token: TOKEN,
-          chain: 1,
-          symbol: 'USDT',
-          decimals: 6,
-          address: TOKEN,
-          name: 'Tether USD'
-        })
+        expect(tokens).toEqual([
+          { token: TOKEN, chain: 1, symbol: 'USDT', decimals: 6, address: TOKEN, name: 'Tether USD' },
+          { token: TOKEN, chain: 8453, symbol: 'USDT', decimals: 6, address: TOKEN, name: undefined },
+          { token: TOKEN, chain: 42161, symbol: 'USDT0', decimals: 6, address: TOKEN, name: undefined }
+        ])
       })
 
       test('passes fromChain as chains filter when provided', async () => {
         await protocol.getSupportedTokens({ fromChain: 1 })
 
-        const call = global.fetch.mock.calls.find(([url]) => url.includes('/tokens'))[0]
-        expect(call).toContain('chains=1')
+        expect(global.fetch).toHaveBeenCalledWith(`${LIFI_API}/tokens?chains=1`, FETCH_OPTS)
       })
 
       test('omits chains filter when no options provided', async () => {
         await protocol.getSupportedTokens()
 
-        const call = global.fetch.mock.calls.find(([url]) => url.includes('/tokens'))[0]
-        expect(call).not.toContain('chains=')
+        expect(global.fetch).toHaveBeenCalledWith(`${LIFI_API}/tokens?`, FETCH_OPTS)
       })
     })
 
@@ -769,8 +797,10 @@ describe('LifiSwidgeProtocol', () => {
           token: TOKEN, targetChain: 'arbitrum', recipient: USER_ADDRESS, amount: 1_000_000n
         })
 
-        const quoteCall = global.fetch.mock.calls.find(([url]) => url.includes('/quote'))[0]
-        expect(quoteCall).toContain(`toToken=${TOKEN}`)
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}`,
+          FETCH_OPTS
+        )
       })
     })
 
@@ -801,7 +831,8 @@ describe('LifiSwidgeProtocol', () => {
         expect(result.hash).toBe('dummy-swap-hash')
         expect(result.tokenInAmount).toBe(1_000_000n)
         expect(result.tokenOutAmount).toBe(999_700n)
-        expect(typeof result.fee).toBe('bigint')
+        // Legacy swap fee aggregates network + protocol fees
+        expect(result.fee).toBe(155_728_000_002_300n)
       })
     })
 
@@ -815,7 +846,8 @@ describe('LifiSwidgeProtocol', () => {
 
         expect(result.tokenInAmount).toBe(1_000_000n)
         expect(result.tokenOutAmount).toBe(999_700n)
-        expect(typeof result.fee).toBe('bigint')
+        // Legacy swap fee aggregates network + protocol fees
+        expect(result.fee).toBe(155_728_000_002_300n)
       })
     })
   })
@@ -823,13 +855,20 @@ describe('LifiSwidgeProtocol', () => {
   // ─── ERC-4337 account suite ───────────────────────────────────────────────
 
   describe('with WalletAccountEvmErc4337', () => {
+    // Deterministic approve() calldata computed with the real ethers ABI coder.
+    const ERC20_INTERFACE = new ethers.Interface(['function approve(address spender, uint256 amount) returns (bool)'])
+    const EXPECTED_APPROVE_DATA = ERC20_INTERFACE.encodeFunctionData('approve', [APPROVAL_ADDRESS, 1_000_000n])
+    const EXPECTED_RESET_DATA = ERC20_INTERFACE.encodeFunctionData('approve', [APPROVAL_ADDRESS, 0n])
+
     let account, protocol
 
     beforeEach(() => {
       account = new WalletAccountEvmErc4337(SEED, "0'/0/0", {
         chainId: 1,
-        provider: 'https://mock-rpc-url.com'
+        provider: 'https://dummy-rpc-url.com'
       })
+      // The ERC-4337 address is a counterfactual smart-account address (not the
+      // EOA derivation), so it is mocked rather than derived.
       account.getAddress = jest.fn().mockResolvedValue(USER_ADDRESS)
       protocol = new LifiSwidgeProtocol(account)
       getNetworkMock.mockResolvedValue({ chainId: 1n })
@@ -851,7 +890,7 @@ describe('LifiSwidgeProtocol', () => {
         })
 
         const approveCall = account.sendTransaction.mock.calls[0][0]
-        expect(Array.isArray(approveCall)).toBe(true)
+        expect(approveCall).toEqual([{ to: TOKEN, data: EXPECTED_APPROVE_DATA }])
       })
 
       test('wraps bridge transaction in an array for ERC-4337', async () => {
@@ -860,9 +899,12 @@ describe('LifiSwidgeProtocol', () => {
         })
 
         const bridgeCall = account.sendTransaction.mock.calls[1][0]
-        expect(Array.isArray(bridgeCall)).toBe(true)
-        expect(bridgeCall[0].to).toBe(APPROVAL_ADDRESS)
-        expect(bridgeCall[0].data).toBe(MOCK_QUOTE.transactionRequest.data)
+        expect(bridgeCall).toEqual([{
+          to: APPROVAL_ADDRESS,
+          data: DUMMY_QUOTE.transactionRequest.data,
+          value: 0n,
+          gasLimit: 300_000n
+        }])
       })
 
       test('resets allowance before approving when non-zero allowance exists', async () => {
@@ -878,7 +920,7 @@ describe('LifiSwidgeProtocol', () => {
 
         expect(account.sendTransaction).toHaveBeenCalledTimes(3)
         const resetCall = account.sendTransaction.mock.calls[0][0]
-        expect(Array.isArray(resetCall)).toBe(true)
+        expect(resetCall).toEqual([{ to: TOKEN, data: EXPECTED_RESET_DATA }])
 
         const approvalTxs = result.transactions.filter(t => t.type === 'approval')
         expect(approvalTxs[0].hash).toBe('dummy-reset-hash')
@@ -896,20 +938,20 @@ describe('LifiSwidgeProtocol', () => {
       test('throws LifiReadOnlyAccountError when ERC-4337 account is read-only', async () => {
         const readOnly = new LifiSwidgeProtocol(
           new WalletAccountReadOnlyEvmErc4337(USER_ADDRESS, {
-            chainId: 1, provider: 'https://mock-rpc-url.com'
+            chainId: 1, provider: 'https://dummy-rpc-url.com'
           })
         )
 
         await expect(readOnly.swidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow(LifiReadOnlyAccountError)
+        })).rejects.toThrow('swidge() requires a writable account.')
       })
 
       test('allows per-call maxProtocolFeeBps override', async () => {
         await expect(protocol.swidge(
           { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
           { maxProtocolFeeBps: 1 }
-        )).rejects.toThrow(LifiExecutionError)
+        )).rejects.toThrow('Protocol fee exceeds maxProtocolFeeBps limit.')
       })
     })
   })
@@ -920,7 +962,7 @@ describe('LifiSwidgeProtocol', () => {
     let protocol
 
     beforeEach(() => {
-      protocol = new LifiSwidgeProtocol(undefined, { provider: 'https://mock-rpc-url.com' })
+      protocol = new LifiSwidgeProtocol(undefined, { provider: 'https://dummy-rpc-url.com' })
       getNetworkMock.mockResolvedValue({ chainId: 1n })
       mockFetch()
     })
@@ -935,18 +977,348 @@ describe('LifiSwidgeProtocol', () => {
 
     test('getSupportedChains works without an account', async () => {
       const chains = await protocol.getSupportedChains()
-      expect(chains.length).toBeGreaterThan(0)
+      expect(chains).toHaveLength(2)
     })
 
     test('getSupportedTokens works without an account', async () => {
       const tokens = await protocol.getSupportedTokens()
-      expect(tokens.length).toBeGreaterThan(0)
+      expect(tokens).toHaveLength(3)
     })
 
     test('swidge throws LifiReadOnlyAccountError without an account', async () => {
       await expect(protocol.swidge({
         fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-      })).rejects.toThrow(LifiReadOnlyAccountError)
+      })).rejects.toThrow('swidge() requires a writable account.')
+    })
+  })
+
+  // ─── Reliability: timeouts, retries, error classification ────────────────
+
+  describe('reliability', () => {
+    let account, protocol
+
+    beforeEach(() => {
+      account = new WalletAccountEvm(SEED, "0'/0/0", { provider: 'https://dummy-rpc-url.com' })
+      protocol = new LifiSwidgeProtocol(account, { retryDelay: 0 })
+      getNetworkMock.mockResolvedValue({ chainId: 1n })
+    })
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    test('retries on 500 and succeeds on the second attempt', async () => {
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: false, status: 500, statusText: 'Internal Server Error', json: async () => ({}) })
+        .mockResolvedValueOnce({ ok: true, json: async () => DUMMY_CHAINS })
+
+      const chains = await protocol.getSupportedChains()
+
+      expect(chains).toHaveLength(2)
+      expect(global.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    test('throws the endpoint error class after exhausting retries on persistent 5xx', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false, status: 502, statusText: 'Bad Gateway', json: async () => ({})
+      })
+
+      await expect(protocol.getSupportedChains()).rejects.toThrow('LI.FI chains request failed: Bad Gateway')
+      expect(global.fetch).toHaveBeenCalledTimes(2) // default: 1 retry, 2 attempts total
+    })
+
+    test('honors a custom retries count', async () => {
+      const persistent = new LifiSwidgeProtocol(account, { retries: 3, retryDelay: 0 })
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false, status: 503, statusText: 'Service Unavailable', json: async () => ({})
+      })
+
+      await expect(persistent.getSupportedChains()).rejects.toThrow('LI.FI chains request failed: Service Unavailable')
+      expect(global.fetch).toHaveBeenCalledTimes(4)
+    })
+
+    test('retries: 0 disables retrying', async () => {
+      const noRetry = new LifiSwidgeProtocol(account, { retries: 0 })
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false, status: 500, statusText: 'Internal Server Error', json: async () => ({})
+      })
+
+      await expect(noRetry.getSupportedChains()).rejects.toThrow('LI.FI chains request failed: Internal Server Error')
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not retry client errors (400)', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false, status: 400, statusText: 'Bad Request', json: async () => ({ message: 'Invalid params' })
+      })
+
+      await expect(protocol.getSupportedChains())
+        .rejects.toThrow('LI.FI chains request failed: Invalid params')
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    })
+
+    test('retries 429 honoring the Retry-After header', async () => {
+      jest.useFakeTimers()
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce({
+          ok: false, status: 429, statusText: 'Too Many Requests', headers: { get: () => '2' }, json: async () => ({})
+        })
+        .mockResolvedValueOnce({ ok: true, json: async () => DUMMY_CHAINS })
+
+      const promise = protocol.getSupportedChains()
+
+      await jest.advanceTimersByTimeAsync(1_999)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+
+      await jest.advanceTimersByTimeAsync(1)
+      const chains = await promise
+
+      expect(chains).toHaveLength(2)
+      expect(global.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    test('throws LifiRateLimitError when 429 persists after retries', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false, status: 429, statusText: 'Too Many Requests', json: async () => ({})
+      })
+
+      await expect(protocol.getSupportedChains()).rejects.toThrow('LI.FI chains request failed: rate limit exceeded: Too Many Requests')
+      expect(global.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    test('maps 409 on /quote to LifiSlippageError without retrying', async () => {
+      global.fetch = jest.fn().mockImplementation((url) => {
+        if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
+        if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
+        return Promise.resolve({ ok: false, status: 409, statusText: 'Conflict', json: async () => ({}) })
+      })
+
+      const err = await protocol.quoteSwidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      }).catch(e => e)
+
+      expect(err).toBeInstanceOf(LifiSlippageError)
+      expect(err).toBeInstanceOf(LifiQuoteError) // subclass keeps existing catch blocks working
+
+      const quoteCalls = global.fetch.mock.calls.filter(([url]) => url.includes('/quote'))
+      expect(quoteCalls).toHaveLength(1)
+    })
+
+    test('retries network errors and succeeds', async () => {
+      global.fetch = jest.fn()
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValueOnce({ ok: true, json: async () => DUMMY_CHAINS })
+
+      const chains = await protocol.getSupportedChains()
+
+      expect(chains).toHaveLength(2)
+      expect(global.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    test('throws LifiNetworkError when network failures persist', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed'))
+
+      await expect(protocol.getSupportedChains()).rejects.toThrow('LI.FI chains request failed: fetch failed')
+      expect(global.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    test('throws LifiTimeoutError when a request hangs past the timeout', async () => {
+      jest.useFakeTimers()
+      const hung = new LifiSwidgeProtocol(account, { timeout: 1_000, retries: 0 })
+      global.fetch = jest.fn().mockImplementation(() => new Promise(() => {}))
+
+      const assertion = expect(hung.getSupportedChains()).rejects.toThrow('LI.FI request timed out after 1000ms')
+      await jest.advanceTimersByTimeAsync(1_000)
+      await assertion
+    })
+
+    test('tags NOT_FOUND status errors with a machine-readable lifiStatus', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true, json: async () => ({ status: 'NOT_FOUND' })
+      })
+
+      const err = await protocol.getSwidgeStatus('0xbad').catch(e => e)
+
+      expect(err).toBeInstanceOf(LifiStatusError)
+      expect(err.lifiStatus).toBe('NOT_FOUND')
+    })
+  })
+
+  // ─── Input validation ─────────────────────────────────────────────────────
+
+  describe('input validation', () => {
+    let account, protocol
+
+    beforeEach(() => {
+      account = new WalletAccountEvm(SEED, "0'/0/0", { provider: 'https://dummy-rpc-url.com' })
+      protocol = new LifiSwidgeProtocol(account)
+      getNetworkMock.mockResolvedValue({ chainId: 1n })
+      mockFetch()
+    })
+
+    test('rejects a missing fromToken before any API call', async () => {
+      await expect(protocol.quoteSwidge({
+        toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })).rejects.toThrow("'fromToken' is required and must be a token address or symbol.")
+
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    test('rejects an invalid recipient address', async () => {
+      await expect(protocol.quoteSwidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n, recipient: 'not-an-address'
+      })).rejects.toThrow("'recipient' is not a valid address: not-an-address")
+
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    test('rejects slippage outside the 0-1 range', async () => {
+      await expect(protocol.quoteSwidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n, slippage: 1.5
+      })).rejects.toThrow("'slippage' must be a decimal between 0 and 1 (e.g. 0.03 for 3%), got: 1.5")
+
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    test('rejects a zero amount', async () => {
+      await expect(protocol.quoteSwidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 0n
+      })).rejects.toThrow("'fromTokenAmount' must be greater than zero.")
+
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    test('rejects when neither fromTokenAmount nor toTokenAmount is provided', async () => {
+      await expect(protocol.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum'
+      })).rejects.toThrow("Either 'fromTokenAmount' or 'toTokenAmount' must be provided.")
+
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+  })
+
+  // ─── Quote transaction validation ─────────────────────────────────────────
+
+  describe('quote transaction validation', () => {
+    const ZKSYNC_DIAMOND = '0x341e94069f53234fE6DabeF707aD424830525715'
+    const ROGUE = '0x000000000000000000000000000000000000dEaD'
+
+    let account, protocol
+
+    function mockQuoteWith (txOverrides = {}, estimateOverrides = {}) {
+      global.fetch = jest.fn().mockImplementation((url) => {
+        if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
+        if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ...DUMMY_QUOTE,
+            estimate: { ...DUMMY_QUOTE.estimate, ...estimateOverrides },
+            transactionRequest: { ...DUMMY_QUOTE.transactionRequest, ...txOverrides }
+          })
+        })
+      })
+    }
+
+    beforeEach(() => {
+      account = new WalletAccountEvm(SEED, "0'/0/0", { provider: 'https://dummy-rpc-url.com' })
+      protocol = new LifiSwidgeProtocol(account, { trustedContracts: true })
+      getNetworkMock.mockResolvedValue({ chainId: 1n })
+      allowanceMock.mockResolvedValue(0n)
+      account.sendTransaction = jest.fn().mockResolvedValue({ hash: 'dummy-hash' })
+    })
+
+    test('rejects non-hex calldata even without trustedContracts', async () => {
+      const plain = new LifiSwidgeProtocol(account)
+      mockQuoteWith({ data: 'not-hex' })
+
+      await expect(plain.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })).rejects.toThrow('LI.FI quote transactionRequest.data is not valid hex calldata.')
+
+      expect(account.sendTransaction).not.toHaveBeenCalled()
+    })
+
+    test('rejects an unparseable transaction value', async () => {
+      mockQuoteWith({ value: 'not-a-number' })
+
+      await expect(protocol.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })).rejects.toThrow('LI.FI quote transactionRequest value/gasLimit are not parseable amounts.')
+
+      expect(account.sendTransaction).not.toHaveBeenCalled()
+    })
+
+    test('trustedContracts: true accepts the canonical LI.FI Diamond target', async () => {
+      mockQuoteWith() // DUMMY_QUOTE targets the canonical Diamond
+
+      const result = await protocol.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })
+
+      expect(result.hash).toBe('dummy-hash')
+    })
+
+    test('trustedContracts: true rejects an unknown target before any approval is sent', async () => {
+      mockQuoteWith({ to: ROGUE })
+
+      await expect(protocol.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })).rejects.toThrow(`LI.FI quote targets contract ${ROGUE} on chain 1`)
+
+      expect(account.sendTransaction).not.toHaveBeenCalled()
+    })
+
+    test('trustedContracts: true rejects an untrusted approvalAddress', async () => {
+      mockQuoteWith({}, { approvalAddress: ROGUE })
+
+      await expect(protocol.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })).rejects.toThrow(`LI.FI quote requests approval for ${ROGUE} on chain 1`)
+
+      expect(account.sendTransaction).not.toHaveBeenCalled()
+    })
+
+    test('a trustedContracts map extends the built-in allowlist', async () => {
+      const extended = new LifiSwidgeProtocol(account, { trustedContracts: { 1: ROGUE } })
+      mockQuoteWith({ to: ROGUE })
+
+      const result = await extended.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })
+
+      expect(result.hash).toBe('dummy-hash')
+    })
+
+    test('without trustedContracts the target is forwarded as-is (LI.FI SDK parity)', async () => {
+      const plain = new LifiSwidgeProtocol(account)
+      mockQuoteWith({ to: ROGUE })
+
+      const result = await plain.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })
+
+      expect(result.hash).toBe('dummy-hash')
+    })
+
+    test('zkSync Era uses its own Diamond deployment', async () => {
+      getNetworkMock.mockResolvedValue({ chainId: 324n })
+      mockQuoteWith({ to: ZKSYNC_DIAMOND }, { approvalAddress: ZKSYNC_DIAMOND })
+
+      const result = await protocol.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })
+
+      expect(result.hash).toBe('dummy-hash')
+    })
+
+    test('the canonical Diamond is rejected on zkSync Era (per-chain entry replaces the default)', async () => {
+      getNetworkMock.mockResolvedValue({ chainId: 324n })
+      mockQuoteWith() // canonical Diamond target
+
+      await expect(protocol.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })).rejects.toThrow(`LI.FI quote targets contract ${APPROVAL_ADDRESS} on chain 324`)
     })
   })
 })

@@ -16,6 +16,10 @@
 
 export { default, default as LifiSwidgeProtocol } from './src/lifi-swidge-protocol.js'
 
+/** @typedef {import('./src/lifi-swidge-protocol.js').LifiSwidgeProtocolConfig} LifiSwidgeProtocolConfig */
+/** @typedef {import('./src/lifi-swidge-protocol.js').LifiRouteOrder} LifiRouteOrder */
+/** @typedef {import('./src/lifi-swidge-protocol.js').SwidgeStatusOptions} SwidgeStatusOptions */
+
 export {
   LifiProtocolError,
   LifiConfigurationError,
@@ -23,5 +27,11 @@ export {
   LifiExecutionError,
   LifiStatusError,
   LifiReadOnlyAccountError,
-  LifiUnsupportedChainError
+  LifiUnsupportedChainError,
+  LifiTimeoutError,
+  LifiNetworkError,
+  LifiRateLimitError,
+  LifiSlippageError,
+  LifiValidationError,
+  LifiUntrustedContractError
 } from './src/errors.js'

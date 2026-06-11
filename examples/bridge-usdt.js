@@ -34,14 +34,14 @@ const account = new WalletAccountEvm(process.env.SEED_PHRASE, "0'/0/0", {
 })
 
 const protocol = new LifiSwidgeProtocol(account, {
-  integrator: 'your-integrator-id',  // optional — register at li.fi
+  integrator: 'your-integrator-id', // optional — register at li.fi
   order: 'RECOMMENDED'
 })
 
 // 1. Get a non-binding quote first
 const quote = await protocol.quoteSwidge({
   fromToken: USDT_ETHEREUM,
-  toToken: USDT_ETHEREUM,  // same symbol, LI.FI resolves destination address
+  toToken: USDT_ETHEREUM, // same symbol, LI.FI resolves destination address
   toChain: 'arbitrum',
   fromTokenAmount: AMOUNT
 })
@@ -68,10 +68,22 @@ for (const fee of quote.fees) {
 // console.log(`  Bridge tx: ${result.hash}`)
 // console.log(`  Track at: https://scan.li.fi/tx/${result.id}`)
 //
-// // 3. Poll status until terminal
+// // 3. Poll status until terminal.
+// // NOT_FOUND means the tx is not indexed yet — keep polling. Other status API
+// // errors are tolerated up to a small budget (transient 5xx/429 are already
+// // retried inside getSwidgeStatus).
+// const TERMINAL = ['completed', 'failed', 'refunded', 'partial', 'cancelled', 'expired']
 // let status
+// let errorBudget = 3
 // do {
-//   await new Promise(r => setTimeout(r, 10_000))
-//   ;({ status } = await protocol.getSwidgeStatus(result.id, { fromChain: 1, toChain: 42161 }))
-//   console.log(`  Status: ${status}`)
-// } while (!['completed', 'failed', 'refunded', 'partial'].includes(status))
+//   await new Promise(resolve => setTimeout(resolve, 10_000))
+//   try {
+//     ;({ status } = await protocol.getSwidgeStatus(result.id, { fromChain: 1, toChain: 42161 }))
+//     errorBudget = 3
+//     console.log(`  Status: ${status}`)
+//   } catch (err) {
+//     if (err.lifiStatus === 'NOT_FOUND') continue // not indexed yet
+//     if (--errorBudget === 0) throw err
+//     console.log(`  Status check failed (${err.message}), retrying…`)
+//   }
+// } while (!TERMINAL.includes(status))
