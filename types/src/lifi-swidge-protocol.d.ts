@@ -18,10 +18,10 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
      * Only `quoteSwidge`, `getSwidgeStatus`, `getSupportedChains`, and `getSupportedTokens` are available.
      *
      * @overload
-     * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337} account - Read-only account used to derive the source address for quotes.
+     * @param {WalletAccountReadOnlyEvm} account - Read-only account used to derive the source address for quotes.
      * @param {LifiSwidgeProtocolConfig} [config] - Fee caps, LI.FI routing options, and reliability/security settings.
      */
-    constructor(account: WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337, config?: LifiSwidgeProtocolConfig | undefined);
+    constructor(account: WalletAccountReadOnlyEvm, config?: LifiSwidgeProtocolConfig | undefined);
     /**
      * Creates a full LI.FI Swidge protocol capable of executing swap and bridge operations.
      *
@@ -30,12 +30,6 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
      * @param {LifiSwidgeProtocolConfig} [config] - Fee caps, LI.FI routing options, and reliability/security settings.
      */
     constructor(account: WalletAccountEvm | WalletAccountEvmErc4337, config?: LifiSwidgeProtocolConfig | undefined);
-    /**
-     * The LI.FI protocol configuration.
-     *
-     * @protected
-     */
-    protected _config: LifiSwidgeProtocolConfig;
     /** @private */
     private _chainId;
     /** @private */
@@ -47,7 +41,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
      * a reset-to-zero transaction is sent first.
      *
      * @param {SwidgeOptions} options - Route options: token pair, destination chain, amount (exact-in or exact-out), slippage, and recipient.
-     * @param {Partial<EvmErc4337WalletPaymasterTokenConfig | EvmErc4337WalletSponsorshipPolicyConfig | EvmErc4337WalletNativeCoinsConfig> & Pick<LifiSwidgeProtocolConfig, 'maxNetworkFeeBps' | 'maxProtocolFeeBps'>} [config] - Per-call overrides for fee caps and ERC-4337 config.
+     * @param {LifiSwidgeProtocolConfig} [config] - Per-call overrides for fee caps and ERC-4337 config.
      * @returns {Promise<SwidgeResult>} The bridge transaction hash (as `id` and `hash`), fees, all sent transactions, and quoted amounts.
      * @throws {LifiReadOnlyAccountError} If the bound account is read-only or absent.
      * @throws {LifiConfigurationError} If no connected provider is available.
@@ -56,42 +50,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
      * @throws {LifiUntrustedContractError} If `trustedContracts` is enabled and the quote targets an unknown contract.
      * @throws {LifiQuoteError} If LI.FI cannot produce a route or the quote API request fails.
      */
-    swidge(options: SwidgeOptions, config?: Partial<EvmErc4337WalletPaymasterTokenConfig | EvmErc4337WalletSponsorshipPolicyConfig | EvmErc4337WalletNativeCoinsConfig> & Pick<LifiSwidgeProtocolConfig, "maxNetworkFeeBps" | "maxProtocolFeeBps">): Promise<SwidgeResult>;
-    /**
-     * Returns a non-binding quote for a swap, bridge, or combined swap+bridge operation.
-     *
-     * @param options - Route options: token pair, destination chain, amount, slippage, and recipient.
-     * @returns Non-binding amounts, fees, estimated duration, and price impact for the route.
-     * @throws {LifiConfigurationError} If no connected provider is available.
-     * @throws {LifiValidationError} If the options fail validation.
-     * @throws {LifiUnsupportedChainError} If `toChain` is a chain name not in the supported chains map.
-     * @throws {LifiQuoteError} If LI.FI cannot produce a route or the quote API request fails.
-     */
-    quoteSwidge(options: SwidgeOptions): Promise<SwidgeQuote>;
-    /**
-     * Returns the current status of an in-flight swidge operation.
-     *
-     * @param id - The source-chain transaction hash returned by `swidge()`.
-     * @param options - Optional chain hints to speed up LI.FI indexing.
-     * @returns Current status and all known transactions for the operation.
-     * @throws {LifiStatusError} If the LI.FI status API returns an error or the id is not found.
-     */
-    getSwidgeStatus(id: string, options?: SwidgeStatusOptions): Promise<SwidgeStatusResult>;
-    /**
-     * Returns all chains currently supported by LI.FI.
-     *
-     * @returns Array of supported chain descriptors.
-     * @throws {LifiQuoteError} If the chains API request fails.
-     */
-    getSupportedChains(): Promise<SwidgeSupportedChain[]>;
-    /**
-     * Returns tokens available for swapping or bridging, optionally filtered by source chain.
-     *
-     * @param options - Optional filter: `fromChain` restricts results to tokens on that chain.
-     * @returns Flat array of supported token descriptors.
-     * @throws {LifiQuoteError} If the tokens API request fails.
-     */
-    getSupportedTokens(options?: SwidgeSupportedTokensOptions): Promise<SwidgeSupportedToken[]>;
+    swidge(options: SwidgeOptions, config?: LifiSwidgeProtocolConfig): Promise<SwidgeResult>;
     /** @private */
     private _getChainId;
     /** @private */
@@ -141,10 +100,6 @@ export type SwidgeSupportedTokensOptions = import("@tetherto/wdk-wallet/protocol
 export type WalletAccountEvm = import("@tetherto/wdk-wallet-evm").WalletAccountEvm;
 export type WalletAccountReadOnlyEvm = import("@tetherto/wdk-wallet-evm").WalletAccountReadOnlyEvm;
 export type WalletAccountEvmErc4337 = import("@tetherto/wdk-wallet-evm-erc-4337").WalletAccountEvmErc4337;
-export type WalletAccountReadOnlyEvmErc4337 = import("@tetherto/wdk-wallet-evm-erc-4337").WalletAccountReadOnlyEvmErc4337;
-export type EvmErc4337WalletPaymasterTokenConfig = import("@tetherto/wdk-wallet-evm-erc-4337").EvmErc4337WalletPaymasterTokenConfig;
-export type EvmErc4337WalletSponsorshipPolicyConfig = import("@tetherto/wdk-wallet-evm-erc-4337").EvmErc4337WalletSponsorshipPolicyConfig;
-export type EvmErc4337WalletNativeCoinsConfig = import("@tetherto/wdk-wallet-evm-erc-4337").EvmErc4337WalletNativeCoinsConfig;
 export type Eip1193Provider = import("ethers").Eip1193Provider;
 /**
  * Route selection strategy forwarded to the LI.FI quote API.

@@ -37,7 +37,7 @@ import {
  * @property {number} [timeout] - Timeout in ms per attempt (default: 30,000).
  * @property {number} [retries] - Extra attempts on transient failures (default: 1; 0 disables retries).
  * @property {number} [retryDelay] - Base backoff delay in ms, doubled per attempt and capped at 5,000 (default: 500).
- * @property {typeof Error} [errorClass] - Error constructor for non-transient endpoint failures (default: LifiProtocolError).
+ * @property {new (message: string) => Error} [errorClass] - Error constructor for non-transient endpoint failures (default: LifiProtocolError).
  * @property {string} [errorPrefix] - Prefix for endpoint failure messages (default: 'LI.FI request failed').
  * @property {string} [errorSuffix] - Hint appended to endpoint failure messages, e.g. a recovery suggestion.
  */
@@ -75,12 +75,9 @@ async function fetchWithTimeout (url, init, timeout) {
   }
 }
 
-// Exponential backoff with full jitter: baseDelay * 2^attempt as ceiling,
-// actual delay is a random value in [0, ceiling]. Jitter distributes retries
-// across time, preventing thundering-herd when many clients retry in sync.
+// Exponential backoff: baseDelay doubled per attempt, capped at MAX_RETRY_DELAY.
 function backoffDelay (attempt, baseDelay) {
-  const ceiling = Math.min(baseDelay * 2 ** attempt, MAX_RETRY_DELAY)
-  return Math.random() * ceiling
+  return Math.min(baseDelay * 2 ** attempt, MAX_RETRY_DELAY)
 }
 
 // Delay before retrying a 429: honors the Retry-After header (seconds or
@@ -109,7 +106,7 @@ function rateLimitDelay (attempt, baseDelay, response) {
  *
  * @param {string} url - Full request URL including query string.
  * @param {RequestOptions} [options] - Timeout, retry, and error-classification options.
- * @returns {Promise<unknown>} Parsed JSON response body.
+ * @returns {Promise<any>} Parsed JSON response body.
  * @throws {LifiTimeoutError} If an attempt exceeds the timeout and retries are exhausted.
  * @throws {LifiNetworkError} If a network-level failure persists after retries.
  * @throws {LifiRateLimitError} If the API keeps returning 429 after retries.

@@ -16,14 +16,8 @@
 
 /** Base class for all errors thrown by the LI.FI Swidge protocol. */
 export class LifiProtocolError extends Error {
-  /**
-   * Creates a new LI.FI error.
-   *
-   * @param {string} message - The error's message.
-   * @param {object} [details] - The error's details.
-   */
-  constructor (message, details) {
-    super(message, details)
+  constructor (message, options) {
+    super(message, options)
     this.name = this.constructor.name
   }
 }

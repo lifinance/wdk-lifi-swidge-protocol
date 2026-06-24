@@ -1,14 +1,13 @@
 {
   "include": ["index.js", "src/**/*.js"],
   "compilerOptions": {
-    "target": "es2015",
+    "target": "es2022",
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "allowJs": true,
     "checkJs": false,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "stripInternal": true,
     "outDir": "types",
     "skipLibCheck": true
   }

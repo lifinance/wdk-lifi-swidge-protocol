@@ -40,10 +40,6 @@ import {
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountEvm} WalletAccountEvm */
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
 /** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountEvmErc4337} WalletAccountEvmErc4337 */
-/** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountReadOnlyEvmErc4337} WalletAccountReadOnlyEvmErc4337 */
-/** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').EvmErc4337WalletPaymasterTokenConfig} EvmErc4337WalletPaymasterTokenConfig */
-/** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').EvmErc4337WalletSponsorshipPolicyConfig} EvmErc4337WalletSponsorshipPolicyConfig */
-/** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').EvmErc4337WalletNativeCoinsConfig} EvmErc4337WalletNativeCoinsConfig */
 /** @typedef {import('ethers').Eip1193Provider} Eip1193Provider */
 
 /**
@@ -110,7 +106,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
    * Only `quoteSwidge`, `getSwidgeStatus`, `getSupportedChains`, and `getSupportedTokens` are available.
    *
    * @overload
-   * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337} account - Read-only account used to derive the source address for quotes.
+   * @param {WalletAccountReadOnlyEvm} account - Read-only account used to derive the source address for quotes.
    * @param {LifiSwidgeProtocolConfig} [config] - Fee caps, LI.FI routing options, and reliability/security settings.
    */
 
@@ -123,14 +119,6 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
    */
   constructor (account, config = {}) {
     super(account, config)
-
-    /**
-     * The LI.FI protocol configuration.
-     *
-     * @protected
-     * @type {LifiSwidgeProtocolConfig}
-     */
-    this._config = config
 
     /** @private */
     this._chainId = undefined
@@ -171,15 +159,15 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     const toChainId = this._resolveChainId(toChain, fromChainId)
     const resolvedToToken = await this._resolveToToken(fromToken, toToken, fromChainId, toChainId)
 
-    const fromAddress = this._account ? await this._account.getAddress() : undefined
+    const fromAddress = this._account ? await this._account.getAddress().catch(() => undefined) : undefined
 
     const quote = await this._fetchQuote({
       fromChainId,
       toChainId,
       fromToken,
       toToken: resolvedToToken,
-      fromAmount: fromTokenAmount ? BigInt(fromTokenAmount) : undefined,
-      toAmount: toTokenAmount ? BigInt(toTokenAmount) : undefined,
+      fromAmount: fromTokenAmount !== undefined ? BigInt(fromTokenAmount) : undefined,
+      toAmount: toTokenAmount !== undefined ? BigInt(toTokenAmount) : undefined,
       fromAddress,
       toAddress: recipient,
       slippage
@@ -202,7 +190,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
    * a reset-to-zero transaction is sent first.
    *
    * @param {SwidgeOptions} options - Route options: token pair, destination chain, amount (exact-in or exact-out), slippage, and recipient.
-   * @param {Partial<EvmErc4337WalletPaymasterTokenConfig | EvmErc4337WalletSponsorshipPolicyConfig | EvmErc4337WalletNativeCoinsConfig> & Pick<LifiSwidgeProtocolConfig, 'maxNetworkFeeBps' | 'maxProtocolFeeBps'>} [config] - Per-call overrides for fee caps and ERC-4337 config.
+   * @param {LifiSwidgeProtocolConfig} [config] - Per-call overrides for fee caps and ERC-4337 config.
    * @returns {Promise<SwidgeResult>} The bridge transaction hash (as `id` and `hash`), fees, all sent transactions, and quoted amounts.
    * @throws {LifiReadOnlyAccountError} If the bound account is read-only or absent.
    * @throws {LifiConfigurationError} If no connected provider is available.
@@ -241,8 +229,8 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
       toChainId,
       fromToken,
       toToken: resolvedToToken,
-      fromAmount: fromTokenAmount ? BigInt(fromTokenAmount) : undefined,
-      toAmount: toTokenAmount ? BigInt(toTokenAmount) : undefined,
+      fromAmount: fromTokenAmount !== undefined ? BigInt(fromTokenAmount) : undefined,
+      toAmount: toTokenAmount !== undefined ? BigInt(toTokenAmount) : undefined,
       fromAddress,
       toAddress: recipient || fromAddress,
       slippage
@@ -265,9 +253,12 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
 
     const bridgeTx = this._buildBridgeTx(quote)
 
-    const { hash: bridgeHash } = this._isErc4337Account()
-      ? await this._account.sendTransaction([bridgeTx], config)
-      : await this._account.sendTransaction(bridgeTx)
+    let bridgeHash
+    if (this._isErc4337Account()) {
+      ;({ hash: bridgeHash } = await this._account.sendTransaction([bridgeTx], config))
+    } else {
+      ;({ hash: bridgeHash } = await this._account.sendTransaction(bridgeTx))
+    }
 
     const transactions = []
     if (resetAllowanceHash) {

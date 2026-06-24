@@ -10,13 +10,13 @@
  *
  * @param {string} url - Full request URL including query string.
  * @param {RequestOptions} [options] - Timeout, retry, and error-classification options.
- * @returns {Promise<unknown>} Parsed JSON response body.
+ * @returns {Promise<any>} Parsed JSON response body.
  * @throws {LifiTimeoutError} If an attempt exceeds the timeout and retries are exhausted.
  * @throws {LifiNetworkError} If a network-level failure persists after retries.
  * @throws {LifiRateLimitError} If the API keeps returning 429 after retries.
  * @throws {LifiSlippageError} If the API returns 409 — the quote is stale and a new one is needed.
  */
-export function request(url: string, options?: RequestOptions): Promise<unknown>;
+export function request(url: string, options?: RequestOptions): Promise<any>;
 /**
  * Options for a LI.FI API request.
  */
@@ -40,7 +40,7 @@ export type RequestOptions = {
     /**
      * - Error constructor for non-transient endpoint failures (default: LifiProtocolError).
      */
-    errorClass?: ErrorConstructor | undefined;
+    errorClass?: (new (message: string) => Error) | undefined;
     /**
      * - Prefix for endpoint failure messages (default: 'LI.FI request failed').
      */

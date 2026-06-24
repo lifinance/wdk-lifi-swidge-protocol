@@ -12,9 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+'use strict'
+
 // Bare runtime entry point. Node.js polyfills are provided by bare-node-runtime.
-import 'bare-node-runtime/global'
+import 'bare-node-runtime'
 
-export * from './index.js' with { imports: 'bare-node-runtime/imports' }
+export { default, default as LifiSwidgeProtocol } from './src/lifi-swidge-protocol.js'
 
-export { default } from './index.js' with { imports: 'bare-node-runtime/imports' }
+/** @typedef {import('./src/lifi-swidge-protocol.js').LifiSwidgeProtocolConfig} LifiSwidgeProtocolConfig */
+/** @typedef {import('./src/lifi-swidge-protocol.js').LifiRouteOrder} LifiRouteOrder */
+/** @typedef {import('./src/lifi-swidge-protocol.js').SwidgeStatusOptions} SwidgeStatusOptions */
+
+export {
+  LifiProtocolError,
+  LifiConfigurationError,
+  LifiQuoteError,
+  LifiExecutionError,
+  LifiStatusError,
+  LifiReadOnlyAccountError,
+  LifiUnsupportedChainError,
+  LifiTimeoutError,
+  LifiNetworkError,
+  LifiRateLimitError,
+  LifiSlippageError,
+  LifiValidationError,
+  LifiUntrustedContractError
+} from './src/errors.js'
