@@ -25,7 +25,7 @@
 
 import 'dotenv/config'
 import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
-import { LifiSwidgeProtocol } from '@kenny_io/wdk-protocol-swidge-lifi'
+import { LifiSwidgeProtocol } from '@lifi/wdk-protocol-swidge-lifi'
 
 const USDT_ARBITRUM = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9'
 const USDC_ARBITRUM = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'

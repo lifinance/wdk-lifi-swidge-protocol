@@ -1,4 +1,4 @@
-# @kenny_io/wdk-protocol-swidge-lifi
+# @lifi/wdk-protocol-swidge-lifi
 
 [![Powered by WDK](https://img.shields.io/badge/Powered%20by-WDK-blueviolet)](https://docs.wdk.tether.io)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -11,7 +11,7 @@ By implementing `SwidgeProtocol`, this module automatically satisfies both `ISwa
 ## Install
 
 ```bash
-npm install @kenny_io/wdk-protocol-swidge-lifi
+npm install @lifi/wdk-protocol-swidge-lifi
 ```
 
 Peer dependencies (install the ones you need):
@@ -27,7 +27,7 @@ npm install @tetherto/wdk-wallet-evm-erc-4337  # ERC-4337 smart accounts (option
 
 ```js
 import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
-import { LifiSwidgeProtocol } from '@kenny_io/wdk-protocol-swidge-lifi'
+import { LifiSwidgeProtocol } from '@lifi/wdk-protocol-swidge-lifi'
 
 const account = new WalletAccountEvm(seedPhrase, "0'/0/0", {
   provider: 'https://mainnet.infura.io/v3/YOUR_KEY'
@@ -216,7 +216,7 @@ npm run build:types
 
 ## Support
 
-- **Integration questions**: open an issue on [GitHub](https://github.com/kenny-io/wdk-lifi-swidge-protocol/issues) or reach the LI.FI developer relations team at [help.li.fi/hc/en-us](https://help.li.fi/hc/en-us).
+- **Integration questions**: open an issue on [GitHub](https://github.com/lifinance/wdk-lifi-swidge-protocol/issues) or reach the LI.FI developer relations team at [help.li.fi/hc/en-us](https://help.li.fi/hc/en-us).
 - **WDK-specific questions**: use your assigned Tether partner Slack channel.
 
 ## Security

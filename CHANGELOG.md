@@ -6,7 +6,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-## [0.2.0] — 2026-06-11
+## [0.2.0] — 2026-07-06
 
 ### Added
 - TypeScript declarations generated from JSDoc: `npm run build:types` emits `types/` via `tsc`; `types` field and `types` export condition added to package.json. Public typedefs (`LifiSwidgeProtocolConfig`, `LifiRouteOrder`, `SwidgeStatusOptions`) re-exported from `index.js` and `bare.js`.
@@ -19,6 +19,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - 26 new unit tests covering retries, timeouts, rate limiting, error classification, input validation, and the contract allowlist.
 
 ### Changed
+- Renamed the npm package to `@lifi/wdk-protocol-swidge-lifi` and updated package metadata for the `lifinance/wdk-lifi-swidge-protocol` repository.
+- `denyBridges` now overrides the built-in native-value bridge deny list instead of appending to it, so callers can pass `denyBridges: []` to clear the default list.
 - API requests that previously hung indefinitely now fail with `LifiTimeoutError` after the configured timeout; transient 5xx/429 failures are retried before surfacing an error.
 - Conformance pass against Tether's WDK review skills (`tetherto/wdk-agent-skills`: `wdk-review-types-jsdoc`, `wdk-review-tests`):
   - JSDoc: full descriptions and `@throws` on all public methods and constructor overloads; private members reduced to `/** @private */` with rationale moved to code comments; precise types replace bare `object` (`Eip1193Provider`, `Record<...>`, named `SwidgeStatusOptions`/`RequestOptions`/`LifiQuote` typedefs).

@@ -22,7 +22,7 @@
  *   node examples/discover-chains-and-tokens.js
  */
 
-import { LifiSwidgeProtocol } from '@kenny_io/wdk-protocol-swidge-lifi'
+import { LifiSwidgeProtocol } from '@lifi/wdk-protocol-swidge-lifi'
 
 // No account needed for discovery — pass a provider for chain-ID resolution
 // or omit it entirely if you only need static chain/token lists.

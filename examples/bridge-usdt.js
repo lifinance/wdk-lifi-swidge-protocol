@@ -22,7 +22,7 @@
 
 import 'dotenv/config'
 import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
-import { LifiSwidgeProtocol } from '@kenny_io/wdk-protocol-swidge-lifi'
+import { LifiSwidgeProtocol } from '@lifi/wdk-protocol-swidge-lifi'
 
 const USDT_ETHEREUM = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
 // When fromToken === toToken cross-chain, the protocol resolves the destination

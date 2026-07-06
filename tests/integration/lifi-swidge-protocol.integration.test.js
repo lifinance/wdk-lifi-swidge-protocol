@@ -62,7 +62,7 @@ const USDT0_ARB    = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9' // USDT0 on Ar
 
 // ── Tier 1 — Discovery (always run) ───────────────────────────────────────────
 
-describe('@kenny_io/wdk-protocol-swidge-lifi — integration tier 1: discovery (no credentials)', () => {
+describe('@lifi/wdk-protocol-swidge-lifi — integration tier 1: discovery (no credentials)', () => {
   let protocol
 
   beforeEach(() => {
@@ -141,7 +141,7 @@ describe('@kenny_io/wdk-protocol-swidge-lifi — integration tier 1: discovery (
 // ── Tier 2 — Quotes (mainnet tokens, no funds required) ───────────────────────
 
 const describeTier2 = SKIP_TIER2 ? describe.skip : describe
-describeTier2('@kenny_io/wdk-protocol-swidge-lifi — integration tier 2: quotes (mainnet, no funds)', () => {
+describeTier2('@lifi/wdk-protocol-swidge-lifi — integration tier 2: quotes (mainnet, no funds)', () => {
   let protocol
 
   beforeEach(() => {
@@ -251,7 +251,7 @@ describeTier2('@kenny_io/wdk-protocol-swidge-lifi — integration tier 2: quotes
 // ── Tier 3 — Execution (funded Sepolia wallet required) ───────────────────────
 
 const describeTier3 = SKIP_TIER3 ? describe.skip : describe
-describeTier3('@kenny_io/wdk-protocol-swidge-lifi — integration tier 3: execution (funded Sepolia)', () => {
+describeTier3('@lifi/wdk-protocol-swidge-lifi — integration tier 3: execution (funded Sepolia)', () => {
   let account
   let protocol
 

@@ -196,7 +196,7 @@ function mockFetch (overrides = {}) {
 
 // ─── EOA account suite ────────────────────────────────────────────────────────
 
-describe('@kenny_io/wdk-protocol-swidge-lifi', () => {
+describe('@lifi/wdk-protocol-swidge-lifi', () => {
   describe('with WalletAccountEvm (EOA)', () => {
     let account, protocol
 
