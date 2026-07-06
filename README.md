@@ -97,7 +97,7 @@ new LifiSwidgeProtocol(account, {
   apiKey: 'sk-...',            // API key for higher rate limits — server-side only
   order: 'RECOMMENDED',        // 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST'
   allowBridges: ['stargate'],  // whitelist specific bridges
-  denyBridges: ['across'],     // blacklist specific bridges
+  denyBridges: ['across'],     // override the default native-fee bridge deny list
 
   // Reliability (defaults shown — modeled on the LI.FI SDK)
   timeout: 30_000,             // ms per API request attempt
@@ -114,6 +114,13 @@ Fee caps can also be overridden per call:
 ```js
 await protocol.swidge(options, { maxProtocolFeeBps: 20 })
 ```
+
+The module is gasless by default: when `denyBridges` is omitted, it passes a built-in deny list of
+known native-fee bridges (`glacis`, `stargateV2`, `stargateV2Bus`, `squid`, `arbitrum`, and
+`gasZipBridge`) to LI.FI. Supplying `denyBridges` overrides that default instead of appending to it,
+so `denyBridges: ['across']` denies only `across`, and `denyBridges: []` clears the default list.
+Execution still rejects any quote whose `transactionRequest.value` is greater than zero before
+sending approvals or the bridge transaction.
 
 ## Reliability
 

@@ -76,6 +76,8 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     /** @private */
     private _checkFeeCaps;
     /** @private */
+    private _checkNativeValueRequirement;
+    /** @private */
     private _buildBridgeTx;
     /** @private */
     private _handleApproval;
@@ -153,6 +155,8 @@ export type LifiSwidgeProtocolConfig = {
     allowBridges?: string[] | undefined;
     /**
      * - Blacklist of bridge protocol names to exclude (e.g. ['across']).
+     * When omitted, native-value bridges are denied by default for gasless routes. Passing any array
+     * overrides that default; pass [] to allow LI.FI to consider all bridges.
      */
     denyBridges?: string[] | undefined;
     /**

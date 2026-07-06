@@ -69,6 +69,8 @@ import {
  * @property {LifiRouteOrder} [order] - Route selection strategy: 'RECOMMENDED' (default), 'FASTEST', or 'CHEAPEST'.
  * @property {string[]} [allowBridges] - Whitelist of bridge protocol names (e.g. ['stargate', 'cctp']).
  * @property {string[]} [denyBridges] - Blacklist of bridge protocol names to exclude (e.g. ['across']).
+ *   When omitted, native-value bridges are denied by default for gasless routes. Passing any array
+ *   overrides that default; pass [] to allow LI.FI to consider all bridges.
  * @property {number} [timeout] - Timeout in ms per LI.FI API request attempt. Default 30000.
  * @property {number} [retries] - Extra attempts on transient API failures (5xx, 429, network errors, timeouts).
  *   Default 1, mirroring the LI.FI SDK. Set 0 to disable retries.
@@ -84,6 +86,15 @@ import {
 const ERC20_ABI = [
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)'
+]
+
+const NATIVE_VALUE_BRIDGE_DENY_LIST = [
+  'glacis',
+  'stargateV2',
+  'stargateV2Bus',
+  'squid',
+  'arbitrum',
+  'gasZipBridge'
 ]
 
 /**
@@ -171,7 +182,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
       fromAddress,
       toAddress: recipient,
       slippage
-    })
+    }, this._config)
 
     return {
       fromTokenAmount: BigInt(quote.estimate.fromAmount),
@@ -234,13 +245,14 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
       fromAddress,
       toAddress: recipient || fromAddress,
       slippage
-    })
+    }, effectiveConfig)
 
     this._checkFeeCaps(quote, effectiveConfig)
 
     // Validate before approval: an untrusted target must be rejected before
     // any allowance is granted, not just before the bridge tx is sent.
     validateQuoteTransaction(quote, fromChainId, effectiveConfig)
+    this._checkNativeValueRequirement(quote, effectiveConfig)
 
     const { approveHash, resetAllowanceHash } = await this._handleApproval(
       fromToken,
@@ -499,7 +511,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
   }
 
   /** @private */
-  async _fetchQuote ({ fromChainId, toChainId, fromToken, toToken, fromAmount, toAmount, fromAddress, toAddress, slippage }) {
+  async _fetchQuote ({ fromChainId, toChainId, fromToken, toToken, fromAmount, toAmount, fromAddress, toAddress, slippage }, config = this._config) {
     const params = new URLSearchParams({
       fromChain: String(fromChainId),
       toChain: String(toChainId),
@@ -513,7 +525,8 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     if (toAddress) params.set('toAddress', toAddress)
     if (slippage !== undefined) params.set('slippage', String(slippage))
 
-    const { order, allowBridges, denyBridges } = this._config
+    const { order, allowBridges } = config
+    const denyBridges = config.denyBridges ?? NATIVE_VALUE_BRIDGE_DENY_LIST
     if (order) params.set('order', order)
     if (allowBridges?.length) params.set('allowBridges', allowBridges.join(','))
     if (denyBridges?.length) params.set('denyBridges', denyBridges.join(','))
@@ -589,6 +602,16 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
           throw new LifiExecutionError('Network fee exceeds maxNetworkFeeBps limit.')
         }
       }
+    }
+  }
+
+  /** @private */
+  _checkNativeValueRequirement (quote, effectiveConfig) {
+    const value = BigInt(quote.transactionRequest?.value ?? 0)
+    if (value > 0n) {
+      throw new LifiExecutionError(
+        'Selected LI.FI route requires native token value; gasless execution rejected it before execution.'
+      )
     }
   }
 
