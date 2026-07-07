@@ -160,6 +160,12 @@ export type LifiSwidgeProtocolConfig = {
      */
     denyBridges?: string[] | undefined;
     /**
+     * - Forwarded to LI.FI to allow or reject routes that
+     * execute a destination-chain call, such as a destination-chain swap. Defaults to false so routes that
+     * may leave the user with an intermediary token are filtered out unless explicitly enabled.
+     */
+    allowDestinationCall?: boolean | undefined;
+    /**
      * - Timeout in ms per LI.FI API request attempt. Default 30000.
      */
     timeout?: number | undefined;

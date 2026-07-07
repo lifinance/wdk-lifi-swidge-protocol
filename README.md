@@ -98,6 +98,7 @@ new LifiSwidgeProtocol(account, {
   order: 'RECOMMENDED',        // 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST'
   allowBridges: ['stargate'],  // whitelist specific bridges
   denyBridges: ['across'],     // override the default native-fee bridge deny list
+  allowDestinationCall: true,  // opt back into routes with a destination-chain call/swap
 
   // Reliability (defaults shown — modeled on the LI.FI SDK)
   timeout: 30_000,             // ms per API request attempt
@@ -121,6 +122,12 @@ known native-fee bridges (`glacis`, `stargateV2`, `stargateV2Bus`, `squid`, `arb
 so `denyBridges: ['across']` denies only `across`, and `denyBridges: []` clears the default list.
 Execution still rejects any quote whose `transactionRequest.value` is greater than zero before
 sending approvals or the bridge transaction.
+
+The module also passes `allowDestinationCall=false` to LI.FI by default, excluding routes that
+need a destination-chain call, such as a swap after bridging. This avoids `PARTIAL` outcomes where
+the bridge succeeds but the destination swap cannot complete and the user receives an intermediary
+token. Set `allowDestinationCall: true` only when you prefer broader route coverage over that
+filter.
 
 ## Reliability
 

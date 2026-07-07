@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-07-08
+
+### Added
+- Added `allowDestinationCall` config forwarding to LI.FI quote requests.
+
+### Changed
+- LI.FI quote requests now default to `allowDestinationCall=false`, filtering out routes that require destination-chain calls/swaps and may leave users with intermediary tokens. Callers can set `allowDestinationCall: true` to opt back in.
+
 ## [0.2.0] — 2026-07-06
 
 ### Added

@@ -71,6 +71,9 @@ import {
  * @property {string[]} [denyBridges] - Blacklist of bridge protocol names to exclude (e.g. ['across']).
  *   When omitted, native-value bridges are denied by default for gasless routes. Passing any array
  *   overrides that default; pass [] to allow LI.FI to consider all bridges.
+ * @property {boolean} [allowDestinationCall=false] - Forwarded to LI.FI to allow or reject routes that
+ *   execute a destination-chain call, such as a destination-chain swap. Defaults to false so routes that
+ *   may leave the user with an intermediary token are filtered out unless explicitly enabled.
  * @property {number} [timeout] - Timeout in ms per LI.FI API request attempt. Default 30000.
  * @property {number} [retries] - Extra attempts on transient API failures (5xx, 429, network errors, timeouts).
  *   Default 1, mirroring the LI.FI SDK. Set 0 to disable retries.
@@ -526,10 +529,12 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     if (slippage !== undefined) params.set('slippage', String(slippage))
 
     const { order, allowBridges } = config
+    const allowDestinationCall = config.allowDestinationCall ?? false
     const denyBridges = config.denyBridges ?? NATIVE_VALUE_BRIDGE_DENY_LIST
     if (order) params.set('order', order)
     if (allowBridges?.length) params.set('allowBridges', allowBridges.join(','))
     if (denyBridges?.length) params.set('denyBridges', denyBridges.join(','))
+    params.set('allowDestinationCall', String(allowDestinationCall))
 
     return this._request('/quote', params, {
       errorClass: LifiQuoteError,

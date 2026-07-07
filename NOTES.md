@@ -166,7 +166,7 @@ The built-in allowlist (`LIFI_DIAMOND_ADDRESSES` in `lifi-config.js`) holds the 
 
 ## Routing, chain coverage, and Bare runtime
 
-**Routing options** (`order`, `allowBridges`, `denyBridges`, `integrator`, `apiKey`) are constructor config values forwarded as query params or headers to the LI.FI `/quote` endpoint. `slippage` is a per-call option in `SwidgeOptions` so different routes can use different tolerances without reconstructing the instance.
+**Routing options** (`order`, `allowBridges`, `denyBridges`, `allowDestinationCall`, `integrator`, `apiKey`) are constructor config values forwarded as query params or headers to the LI.FI `/quote` endpoint. `allowDestinationCall` defaults to `false`, filtering out routes that need a destination-chain call, such as a destination-chain swap, and reducing the chance of a `PARTIAL` status that leaves the user with an intermediary token. Callers can set `allowDestinationCall: true` to opt back into those routes. `slippage` is a per-call option in `SwidgeOptions` so different routes can use different tolerances without reconstructing the instance.
 
 **Chain coverage:** The `CHAINS` map in `lifi-config.js` covers 66 chains and exists for ergonomics (`'arbitrum'` over `42161`). It is not a gate — passing a raw numeric `toChain` bypasses the map entirely and works for any chain LI.FI supports, including ones added after this release. `getSupportedChains()` returns the live list directly from LI.FI.
 
