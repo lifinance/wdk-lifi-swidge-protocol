@@ -214,6 +214,26 @@ with:
 npm run build:types
 ```
 
+## Publishing
+
+This package does not bundle or transpile its runtime JavaScript. It ships ESM source files
+directly from `index.js`, `src/`, and `bare.js`, plus generated type declarations in `types/`.
+Before handing off a release, run:
+
+```bash
+npm run lint
+npm test
+npm run build:types
+npm audit --omit=dev
+npm publish --dry-run
+```
+
+The actual npm release command is:
+
+```bash
+npm publish --access public
+```
+
 ## Support
 
 - **Integration questions**: open an issue on [GitHub](https://github.com/lifinance/wdk-lifi-swidge-protocol/issues) or reach the LI.FI developer relations team at [help.li.fi/hc/en-us](https://help.li.fi/hc/en-us).
