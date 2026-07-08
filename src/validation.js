@@ -95,6 +95,16 @@ export function validateSwidgeOptions (options = {}) {
   assertPositiveAmount(toTokenAmount, 'toTokenAmount')
 }
 
+/**
+ * Validates execution-guard config values before any API call is made.
+ *
+ * @param {LifiSwidgeProtocolConfig} [config] - Effective protocol config for this call.
+ * @throws {LifiValidationError} If `minAmountOut` is provided but is not a positive integer amount.
+ */
+export function validateSwidgeConfig (config = {}) {
+  assertPositiveAmount(config.minAmountOut, 'minAmountOut')
+}
+
 // Builds the set of trusted contract addresses (lowercased) for a chain:
 // the built-in LI.FI Diamond deployment, Permit2, and any user-supplied
 // additions from the trustedContracts config map.

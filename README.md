@@ -117,6 +117,23 @@ Fee caps can also be overridden per call:
 await protocol.swidge(options, { maxProtocolFeeBps: 20 })
 ```
 
+### Quote-first flows: `minAmountOut`
+
+`swidge()` always fetches a fresh quote at execution time, so in a quote-first UI the route the
+user accepted can differ from the route that executes if the market moves in between. Pass the
+displayed quote's `toTokenAmountMin` as the `minAmountOut` per-call guard: if the fresh execution
+quote's worst-case output falls below it, `swidge()` throws before any approval or transaction is
+sent, and the app can re-quote and ask the user again.
+
+```js
+const quote = await protocol.quoteSwidge(options)
+// ... user reviews and accepts the displayed quote ...
+const result = await protocol.swidge(options, { minAmountOut: quote.toTokenAmountMin })
+```
+
+`minAmountOut` is an execution guard specific to this package — it is not part of the
+WDK-standard `SwidgeOptions` and is not forwarded to LI.FI. When omitted, behavior is unchanged.
+
 By default the module mirrors LI.FI's own routing behavior: no bridges are denied, routes with a
 destination-chain call are allowed (`allowDestinationCall` is only forwarded when explicitly set),
 and quotes whose transaction carries native token value are executed as-is. Setting

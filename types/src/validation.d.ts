@@ -9,6 +9,13 @@
  */
 export function validateSwidgeOptions(options?: SwidgeOptions): void;
 /**
+ * Validates execution-guard config values before any API call is made.
+ *
+ * @param {LifiSwidgeProtocolConfig} [config] - Effective protocol config for this call.
+ * @throws {LifiValidationError} If `minAmountOut` is provided but is not a positive integer amount.
+ */
+export function validateSwidgeConfig(config?: LifiSwidgeProtocolConfig): void;
+/**
  * Validates the transaction data returned by the LI.FI quote API before it is
  * forwarded to the wallet.
  *
