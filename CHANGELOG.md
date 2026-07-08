@@ -6,6 +6,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-08
+
+### Added
+- Exported `NATIVE_VALUE_BRIDGE_DENY_LIST`, the maintained list of bridges known to require native token value in the source transaction. Pass it as `denyBridges` to restore the previous gasless quote filtering.
+- New `allowNativeValue` config (default `true`). When `false`, `swidge()` rejects any quote whose `transactionRequest.value` is greater than zero before sending approvals or the bridge transaction — for gasless setups such as ERC-4337 with a paymaster.
+
+### Changed
+- **Breaking:** the module no longer assumes gasless execution. `denyBridges` no longer defaults to the native-value bridge deny list (omitting it sends no filter to LI.FI), `allowDestinationCall` is only forwarded when explicitly set (LI.FI's server-side default of `true` applies otherwise), and quotes requiring native token value execute as-is unless `allowNativeValue: false` is set. Gasless integrations should pass `{ denyBridges: NATIVE_VALUE_BRIDGE_DENY_LIST, allowNativeValue: false }` to keep the previous behavior.
+
 ## [0.3.0] — 2026-07-08
 
 ### Added

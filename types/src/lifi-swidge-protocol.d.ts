@@ -1,4 +1,10 @@
 /**
+ * Bridge protocols known to require native token value in the source transaction.
+ * Not applied by default — pass as `denyBridges` (typically together with
+ * `allowNativeValue: false`) for gasless integrations.
+ */
+export const NATIVE_VALUE_BRIDGE_DENY_LIST: string[];
+/**
  * WDK Swidge protocol backed by the LI.FI REST API. Provides quotes, execution,
  * and status tracking for swap, bridge, and combined swap+bridge operations
  * across all chains supported by LI.FI.
@@ -155,16 +161,24 @@ export type LifiSwidgeProtocolConfig = {
     allowBridges?: string[] | undefined;
     /**
      * - Blacklist of bridge protocol names to exclude (e.g. ['across']).
-     * When omitted, native-value bridges are denied by default for gasless routes. Passing any array
-     * overrides that default; pass [] to allow LI.FI to consider all bridges.
+     * When omitted, no filter is sent and LI.FI considers all bridges. Gasless integrations can pass the
+     * exported `NATIVE_VALUE_BRIDGE_DENY_LIST` to exclude bridges that require native token value.
      */
     denyBridges?: string[] | undefined;
     /**
      * - Forwarded to LI.FI to allow or reject routes that
-     * execute a destination-chain call, such as a destination-chain swap. Defaults to false so routes that
-     * may leave the user with an intermediary token are filtered out unless explicitly enabled.
+     * execute a destination-chain call, such as a destination-chain swap. When omitted, LI.FI's own
+     * default (true) applies, giving the widest route coverage. Set false to filter out routes that
+     * may leave the user with an intermediary token if the destination call cannot complete.
      */
     allowDestinationCall?: boolean | undefined;
+    /**
+     * - Whether `swidge()` may execute quotes whose transaction
+     * requires native token value (`transactionRequest.value > 0`). Set false for gasless setups
+     * (e.g. ERC-4337 with a paymaster): such quotes are then rejected before any approval is sent.
+     * Combine with `denyBridges: NATIVE_VALUE_BRIDGE_DENY_LIST` to also filter them out at quote time.
+     */
+    allowNativeValue?: boolean | undefined;
     /**
      * - Timeout in ms per LI.FI API request attempt. Default 30000.
      */

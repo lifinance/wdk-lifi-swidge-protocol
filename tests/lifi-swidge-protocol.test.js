@@ -122,9 +122,7 @@ const DUMMY_TOKENS = {
 }
 
 const LIFI_API = 'https://li.quest/v1'
-const NATIVE_VALUE_DENY_BRIDGES = 'glacis%2CstargateV2%2CstargateV2Bus%2Csquid%2Carbitrum%2CgasZipBridge'
-const DEFAULT_DENY_QUERY = `&denyBridges=${NATIVE_VALUE_DENY_BRIDGES}`
-const DEFAULT_ROUTE_FILTER_QUERY = `${DEFAULT_DENY_QUERY}&allowDestinationCall=false`
+const NATIVE_VALUE_DENY_BRIDGES_QUERY = 'glacis%2CstargateV2%2CstargateV2Bus%2Csquid%2Carbitrum%2CgasZipBridge'
 
 // Second fetch argument produced by the request layer; the abort signal is the
 // only value that genuinely cannot be predicted.
@@ -168,6 +166,7 @@ jest.unstable_mockModule('ethers', () => ({
 
 const {
   LifiSwidgeProtocol,
+  NATIVE_VALUE_BRIDGE_DENY_LIST,
   LifiQuoteError,
   LifiStatusError,
   LifiSlippageError
@@ -244,7 +243,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         expect(global.fetch).toHaveBeenCalledWith(`${LIFI_API}/token?chain=1&token=${TOKEN}`, FETCH_OPTS)
         expect(global.fetch).toHaveBeenCalledWith(`${LIFI_API}/tokens?chains=42161&search=USDT&limit=20`, FETCH_OPTS)
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })
@@ -260,7 +259,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         expect(tokenCalls).toHaveLength(0)
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${OTHER_TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${OTHER_TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })
@@ -274,7 +273,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         expect(tokenCalls).toHaveLength(0)
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=10&fromToken=${TOKEN}&toToken=USDC&fromAmount=1000000&fromAddress=${USER_ADDRESS}${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=10&fromToken=${TOKEN}&toToken=USDC&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })
@@ -285,7 +284,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=1&fromToken=${TOKEN}&toToken=USDC&fromAmount=1000000&fromAddress=${USER_ADDRESS}${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=1&fromToken=${TOKEN}&toToken=USDC&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })
@@ -296,7 +295,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=8453&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=8453&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })
@@ -307,7 +306,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&slippage=0.01${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&slippage=0.01`,
           FETCH_OPTS
         )
       })
@@ -320,7 +319,18 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&order=FASTEST${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&order=FASTEST`,
+          FETCH_OPTS
+        )
+      })
+
+      test('sends no bridge or destination-call filters by default', async () => {
+        await protocol.quoteSwidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        })
+
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })
@@ -336,14 +346,14 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&allowBridges=stargate%2Ccctp&denyBridges=across&allowDestinationCall=false`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&allowBridges=stargate%2Ccctp&denyBridges=across`,
           FETCH_OPTS
         )
       })
 
-      test('allows destination calls when allowDestinationCall is true', async () => {
+      test('forwards allowDestinationCall when explicitly set', async () => {
         const filtered = new LifiSwidgeProtocol(account, {
-          allowDestinationCall: true
+          allowDestinationCall: false
         })
 
         await filtered.quoteSwidge({
@@ -351,38 +361,27 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}${DEFAULT_DENY_QUERY}&allowDestinationCall=true`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&allowDestinationCall=false`,
           FETCH_OPTS
         )
       })
 
-      test('uses the native-value bridge deny list by default', async () => {
-        await protocol.quoteSwidge({
+      test('forwards the exported native-value bridge deny list when passed as denyBridges', async () => {
+        const gasless = new LifiSwidgeProtocol(account, {
+          denyBridges: NATIVE_VALUE_BRIDGE_DENY_LIST
+        })
+
+        await gasless.quoteSwidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&denyBridges=${NATIVE_VALUE_DENY_BRIDGES_QUERY}`,
           FETCH_OPTS
         )
       })
 
-      test('overrides the native-value bridge deny list when denyBridges is set', async () => {
-        const filtered = new LifiSwidgeProtocol(account, {
-          denyBridges: ['customBridge']
-        })
-
-        await filtered.quoteSwidge({
-          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })
-
-        expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&denyBridges=customBridge&allowDestinationCall=false`,
-          FETCH_OPTS
-        )
-      })
-
-      test('allows clearing the native-value bridge deny list with an empty denyBridges array', async () => {
+      test('omits denyBridges when an empty array is passed', async () => {
         const unfiltered = new LifiSwidgeProtocol(account, {
           denyBridges: []
         })
@@ -392,7 +391,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&allowDestinationCall=false`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })
@@ -513,7 +512,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })
@@ -605,7 +604,34 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         expect(account.sendTransaction).not.toHaveBeenCalled()
       })
 
-      test('rejects quotes that require native token value before approval by default', async () => {
+      test('executes quotes that require native token value by default', async () => {
+        global.fetch = jest.fn().mockImplementation((url) => {
+          if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
+          if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              ...DUMMY_QUOTE,
+              transactionRequest: { ...DUMMY_QUOTE.transactionRequest, value: '1' }
+            })
+          })
+        })
+
+        const result = await protocol.swidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        })
+
+        expect(result.hash).toBe('dummy-bridge-hash')
+        const bridgeCall = account.sendTransaction.mock.calls[1][0]
+        expect(bridgeCall).toEqual({
+          to: APPROVAL_ADDRESS,
+          data: DUMMY_QUOTE.transactionRequest.data,
+          value: 1n,
+          gasLimit: 300_000n
+        })
+      })
+
+      test('rejects quotes that require native token value before approval when allowNativeValue is false', async () => {
         global.fetch = jest.fn().mockImplementation((url) => {
           if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
           if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
@@ -619,10 +645,11 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         allowanceMock.mockClear()
+        const gasless = new LifiSwidgeProtocol(account, { allowNativeValue: false })
 
-        await expect(protocol.swidge({
+        await expect(gasless.swidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
-        })).rejects.toThrow('Selected LI.FI route requires native token value')
+        })).rejects.toThrow('Selected LI.FI route requires native token value; rejected because allowNativeValue is false.')
 
         expect(allowanceMock).not.toHaveBeenCalled()
         expect(account.sendTransaction).not.toHaveBeenCalled()
@@ -672,7 +699,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=8453&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=8453&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })
@@ -880,7 +907,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })
@@ -989,13 +1016,13 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         }])
       })
 
-      test('uses zero-native-value routing by default', async () => {
+      test('sends no route filters in the quote request by default', async () => {
         await protocol.swidge({
           fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}${DEFAULT_ROUTE_FILTER_QUERY}`,
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&toAddress=${USER_ADDRESS}`,
           FETCH_OPTS
         )
       })

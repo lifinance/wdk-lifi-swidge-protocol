@@ -97,8 +97,9 @@ new LifiSwidgeProtocol(account, {
   apiKey: 'sk-...',            // API key for higher rate limits — server-side only
   order: 'RECOMMENDED',        // 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST'
   allowBridges: ['stargate'],  // whitelist specific bridges
-  denyBridges: ['across'],     // override the default native-fee bridge deny list
-  allowDestinationCall: true,  // opt back into routes with a destination-chain call/swap
+  denyBridges: ['across'],     // blacklist specific bridges
+  allowDestinationCall: true,  // include routes with a destination-chain call/swap (LI.FI default)
+  allowNativeValue: true,      // set false to reject routes that require native token value (gasless)
 
   // Reliability (defaults shown — modeled on the LI.FI SDK)
   timeout: 30_000,             // ms per API request attempt
@@ -116,18 +117,31 @@ Fee caps can also be overridden per call:
 await protocol.swidge(options, { maxProtocolFeeBps: 20 })
 ```
 
-The module is gasless by default: when `denyBridges` is omitted, it passes a built-in deny list of
-known native-fee bridges (`glacis`, `stargateV2`, `stargateV2Bus`, `squid`, `arbitrum`, and
-`gasZipBridge`) to LI.FI. Supplying `denyBridges` overrides that default instead of appending to it,
-so `denyBridges: ['across']` denies only `across`, and `denyBridges: []` clears the default list.
-Execution still rejects any quote whose `transactionRequest.value` is greater than zero before
-sending approvals or the bridge transaction.
+By default the module mirrors LI.FI's own routing behavior: no bridges are denied, routes with a
+destination-chain call are allowed (`allowDestinationCall` is only forwarded when explicitly set),
+and quotes whose transaction carries native token value are executed as-is. Setting
+`allowDestinationCall: false` excludes routes that need a destination-chain call, such as a swap
+after bridging, avoiding `PARTIAL` outcomes where the bridge succeeds but the destination swap
+cannot complete and the user receives an intermediary token.
 
-The module also passes `allowDestinationCall=false` to LI.FI by default, excluding routes that
-need a destination-chain call, such as a swap after bridging. This avoids `PARTIAL` outcomes where
-the bridge succeeds but the destination swap cannot complete and the user receives an intermediary
-token. Set `allowDestinationCall: true` only when you prefer broader route coverage over that
-filter.
+### Gasless integrations
+
+Wallets that cannot spend native tokens (e.g. ERC-4337 accounts with a paymaster) should opt into
+gasless mode explicitly:
+
+```js
+import LifiSwidgeProtocol, { NATIVE_VALUE_BRIDGE_DENY_LIST } from '@lifi/wdk-protocol-swidge-lifi'
+
+new LifiSwidgeProtocol(account, {
+  denyBridges: NATIVE_VALUE_BRIDGE_DENY_LIST, // filter out native-fee bridges at quote time
+  allowNativeValue: false                     // reject any remaining native-value quote before execution
+})
+```
+
+`NATIVE_VALUE_BRIDGE_DENY_LIST` is the maintained list of bridges known to require native token
+value in the source transaction (`glacis`, `stargateV2`, `stargateV2Bus`, `squid`, `arbitrum`, and
+`gasZipBridge`). With `allowNativeValue: false`, `swidge()` rejects any quote whose
+`transactionRequest.value` is greater than zero before sending approvals or the bridge transaction.
 
 ## Reliability
 

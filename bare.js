@@ -17,7 +17,7 @@
 // Bare runtime entry point. Node.js polyfills are provided by bare-node-runtime.
 import 'bare-node-runtime'
 
-export { default, default as LifiSwidgeProtocol } from './src/lifi-swidge-protocol.js'
+export { default, default as LifiSwidgeProtocol, NATIVE_VALUE_BRIDGE_DENY_LIST } from './src/lifi-swidge-protocol.js'
 
 /** @typedef {import('./src/lifi-swidge-protocol.js').LifiSwidgeProtocolConfig} LifiSwidgeProtocolConfig */
 /** @typedef {import('./src/lifi-swidge-protocol.js').LifiRouteOrder} LifiRouteOrder */

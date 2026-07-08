@@ -69,11 +69,16 @@ import {
  * @property {LifiRouteOrder} [order] - Route selection strategy: 'RECOMMENDED' (default), 'FASTEST', or 'CHEAPEST'.
  * @property {string[]} [allowBridges] - Whitelist of bridge protocol names (e.g. ['stargate', 'cctp']).
  * @property {string[]} [denyBridges] - Blacklist of bridge protocol names to exclude (e.g. ['across']).
- *   When omitted, native-value bridges are denied by default for gasless routes. Passing any array
- *   overrides that default; pass [] to allow LI.FI to consider all bridges.
- * @property {boolean} [allowDestinationCall=false] - Forwarded to LI.FI to allow or reject routes that
- *   execute a destination-chain call, such as a destination-chain swap. Defaults to false so routes that
- *   may leave the user with an intermediary token are filtered out unless explicitly enabled.
+ *   When omitted, no filter is sent and LI.FI considers all bridges. Gasless integrations can pass the
+ *   exported `NATIVE_VALUE_BRIDGE_DENY_LIST` to exclude bridges that require native token value.
+ * @property {boolean} [allowDestinationCall=true] - Forwarded to LI.FI to allow or reject routes that
+ *   execute a destination-chain call, such as a destination-chain swap. When omitted, LI.FI's own
+ *   default (true) applies, giving the widest route coverage. Set false to filter out routes that
+ *   may leave the user with an intermediary token if the destination call cannot complete.
+ * @property {boolean} [allowNativeValue=true] - Whether `swidge()` may execute quotes whose transaction
+ *   requires native token value (`transactionRequest.value > 0`). Set false for gasless setups
+ *   (e.g. ERC-4337 with a paymaster): such quotes are then rejected before any approval is sent.
+ *   Combine with `denyBridges: NATIVE_VALUE_BRIDGE_DENY_LIST` to also filter them out at quote time.
  * @property {number} [timeout] - Timeout in ms per LI.FI API request attempt. Default 30000.
  * @property {number} [retries] - Extra attempts on transient API failures (5xx, 429, network errors, timeouts).
  *   Default 1, mirroring the LI.FI SDK. Set 0 to disable retries.
@@ -91,7 +96,12 @@ const ERC20_ABI = [
   'function approve(address spender, uint256 amount) returns (bool)'
 ]
 
-const NATIVE_VALUE_BRIDGE_DENY_LIST = [
+/**
+ * Bridge protocols known to require native token value in the source transaction.
+ * Not applied by default — pass as `denyBridges` (typically together with
+ * `allowNativeValue: false`) for gasless integrations.
+ */
+export const NATIVE_VALUE_BRIDGE_DENY_LIST = [
   'glacis',
   'stargateV2',
   'stargateV2Bus',
@@ -528,13 +538,11 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     if (toAddress) params.set('toAddress', toAddress)
     if (slippage !== undefined) params.set('slippage', String(slippage))
 
-    const { order, allowBridges } = config
-    const allowDestinationCall = config.allowDestinationCall ?? false
-    const denyBridges = config.denyBridges ?? NATIVE_VALUE_BRIDGE_DENY_LIST
+    const { order, allowBridges, denyBridges, allowDestinationCall } = config
     if (order) params.set('order', order)
     if (allowBridges?.length) params.set('allowBridges', allowBridges.join(','))
     if (denyBridges?.length) params.set('denyBridges', denyBridges.join(','))
-    params.set('allowDestinationCall', String(allowDestinationCall))
+    if (allowDestinationCall !== undefined) params.set('allowDestinationCall', String(allowDestinationCall))
 
     return this._request('/quote', params, {
       errorClass: LifiQuoteError,
@@ -612,10 +620,12 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
 
   /** @private */
   _checkNativeValueRequirement (quote, effectiveConfig) {
+    if (effectiveConfig.allowNativeValue ?? true) return
+
     const value = BigInt(quote.transactionRequest?.value ?? 0)
     if (value > 0n) {
       throw new LifiExecutionError(
-        'Selected LI.FI route requires native token value; gasless execution rejected it before execution.'
+        'Selected LI.FI route requires native token value; rejected because allowNativeValue is false.'
       )
     }
   }
