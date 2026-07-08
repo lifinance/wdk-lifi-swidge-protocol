@@ -1,0 +1,142 @@
+name: Release & Publish
+
+# Changesets-driven release pipeline: push to main → version PR → publish.
+#
+# npm auth = OIDC trusted publishing, pinned to this workflow path. Do not rename
+# `publish.yml` — renaming breaks publishing.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # manual re-trigger if a Version-PR merge push needs re-running
+  # Preview releases are opt-in via the `release-preview` PR label.
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {} # each job declares only the permissions it needs
+
+jobs:
+  verify:
+    name: Verify
+    # Main release chain runs on push only, not the preview label event.
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  changesets:
+    name: Version
+    needs: verify
+    # Prevent this job from running on forks.
+    if: github.repository == 'lifinance/wdk-lifi-swidge-protocol'
+    permissions:
+      contents: write # to push the version branch / create the version PR
+      pull-requests: write # to open the "chore: version packages" PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history so Changesets can build correct changelogs.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+          # No cache — privileged job, don't restore a potentially poisoned cache.
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create version PR
+        id: changesets
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          version: npm run changeset:version
+          title: 'chore: version packages'
+          commit: 'chore: version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    name: Release
+    needs: changesets
+    # Only publish once the version PR has been merged (no pending changesets left).
+    if: needs.changesets.outputs.hasChangesets == 'false'
+    permissions:
+      contents: write # to create GitHub Releases / tags
+      id-token: write # OIDC token for npm provenance (trusted publishing)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+          # No cache — privileged job, don't restore a potentially poisoned cache.
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish to npm
+        id: changesets
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          publish: npm run changeset:publish
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+  # Preview release (opt-in): the `release-preview` label publishes a throwaway
+  # 0.0.0-preview-<sha> to the `preview` dist-tag. Gated by same-repo + Triage+-to-label
+  # (forks can't trigger); secret-isolated; 0.0.0-preview can't become latest.
+  # NEVER convert this to pull_request_target.
+  preview:
+    name: Preview release (PR)
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.label.name == 'release-preview'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # npm OIDC trusted publishing + provenance
+      pull-requests: write # post the install comment + remove the label
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+          # No cache — privileged job, don't restore a potentially poisoned cache.
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Composite (not a reusable workflow) so npm OIDC stays bound to publish.yml.
+      - name: Publish preview
+        uses: ./.github/actions/preview-publish
