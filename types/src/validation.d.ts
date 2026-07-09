@@ -5,16 +5,10 @@
  *
  * @param {SwidgeOptions} options - User-supplied swidge options to validate.
  * @throws {LifiValidationError} If a token identifier is missing, the recipient is not a valid
- *   address, slippage is outside the 0-1 range, or no positive amount is provided.
+ *   address, slippage is outside the 0-1 range, no positive amount is provided, or
+ *   `minAmountOut` is not a positive integer amount.
  */
 export function validateSwidgeOptions(options?: SwidgeOptions): void;
-/**
- * Validates execution-guard config values before any API call is made.
- *
- * @param {LifiSwidgeProtocolConfig} [config] - Effective protocol config for this call.
- * @throws {LifiValidationError} If `minAmountOut` is provided but is not a positive integer amount.
- */
-export function validateSwidgeConfig(config?: LifiSwidgeProtocolConfig): void;
 /**
  * Validates the transaction data returned by the LI.FI quote API before it is
  * forwarded to the wallet.

@@ -657,10 +657,9 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
 
       test('executes when the fresh quote toAmountMin meets minAmountOut', async () => {
         // DUMMY_QUOTE estimate.toAmountMin is 994700
-        const result = await protocol.swidge(
-          { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
-          { minAmountOut: 994_700n }
-        )
+        const result = await protocol.swidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n, minAmountOut: 994_700n
+        })
 
         expect(result.hash).toBe('dummy-bridge-hash')
         expect(result.toTokenAmountMin).toBe(994_700n)
@@ -669,33 +668,38 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
       test('rejects before approval when the fresh quote toAmountMin is below minAmountOut', async () => {
         allowanceMock.mockClear()
 
-        await expect(protocol.swidge(
-          { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
-          { minAmountOut: 994_701n }
-        )).rejects.toThrow('Quote output is below minAmountOut; refresh the quote before executing.')
+        await expect(protocol.swidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n, minAmountOut: 994_701n
+        })).rejects.toThrow('Quote output is below minAmountOut; refresh the quote before executing.')
 
         expect(allowanceMock).not.toHaveBeenCalled()
         expect(account.sendTransaction).not.toHaveBeenCalled()
       })
 
       test('rejects an unparseable minAmountOut before any API call', async () => {
-        await expect(protocol.swidge(
-          { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
-          { minAmountOut: 'not-a-number' }
-        )).rejects.toThrow("'minAmountOut' must be an integer amount in base units, got: not-a-number")
+        await expect(protocol.swidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n, minAmountOut: 'not-a-number'
+        })).rejects.toThrow("'minAmountOut' must be an integer amount in base units, got: not-a-number")
 
         expect(global.fetch).not.toHaveBeenCalled()
         expect(account.sendTransaction).not.toHaveBeenCalled()
       })
 
       test('rejects a zero minAmountOut before any API call', async () => {
-        await expect(protocol.swidge(
-          { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
-          { minAmountOut: 0n }
-        )).rejects.toThrow("'minAmountOut' must be greater than zero.")
+        await expect(protocol.swidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n, minAmountOut: 0n
+        })).rejects.toThrow("'minAmountOut' must be greater than zero.")
 
         expect(global.fetch).not.toHaveBeenCalled()
         expect(account.sendTransaction).not.toHaveBeenCalled()
+      })
+
+      test('quoteSwidge does not apply minAmountOut and still returns the quote', async () => {
+        const quote = await protocol.quoteSwidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n, minAmountOut: 999_999_999n
+        })
+
+        expect(quote.toTokenAmountMin).toBe(994_700n)
       })
 
       test('per-call config overrides protocol-level maxProtocolFeeBps', async () => {
