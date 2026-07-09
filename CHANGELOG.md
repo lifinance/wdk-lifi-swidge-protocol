@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+### Minor Changes
+
+- [#1](https://github.com/lifinance/wdk-lifi-swidge-protocol/pull/1) [`baa1b5f`](https://github.com/lifinance/wdk-lifi-swidge-protocol/commit/baa1b5f94f4a4d177e4b5f4079c252cab16ab0be) Thanks [@brucexu-eth](https://github.com/brucexu-eth)! - Add optional `minAmountOut` execution guard for quote-first flows, using the WDK-standard `SwidgeOptions` field introduced in `@tetherto/wdk-wallet` 1.0.0-beta.14 (dependency bumped). Pass a displayed quote's `toTokenAmountMin` as `swidge({ ...options, minAmountOut })`: if the fresh execution quote's `toAmountMin` falls below it, `swidge()` throws `LifiExecutionError` before any approval or transaction is sent. `quoteSwidge()` ignores the field and always returns the quoted amounts. Not forwarded to LI.FI; behavior is unchanged when omitted.
+
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -9,23 +15,28 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [0.4.0] — 2026-07-08
 
 ### Added
+
 - Exported `NATIVE_VALUE_BRIDGE_DENY_LIST`, the maintained list of bridges known to require native token value in the source transaction. Pass it as `denyBridges` to restore the previous gasless quote filtering.
 - New `allowNativeValue` config (default `true`). When `false`, `swidge()` rejects any quote whose `transactionRequest.value` is greater than zero before sending approvals or the bridge transaction — for gasless setups such as ERC-4337 with a paymaster.
 
 ### Changed
+
 - **Breaking:** the module no longer assumes gasless execution. `denyBridges` no longer defaults to the native-value bridge deny list (omitting it sends no filter to LI.FI), `allowDestinationCall` is only forwarded when explicitly set (LI.FI's server-side default of `true` applies otherwise), and quotes requiring native token value execute as-is unless `allowNativeValue: false` is set. Gasless integrations should pass `{ denyBridges: NATIVE_VALUE_BRIDGE_DENY_LIST, allowNativeValue: false }` to keep the previous behavior.
 
 ## [0.3.0] — 2026-07-08
 
 ### Added
+
 - Added `allowDestinationCall` config forwarding to LI.FI quote requests.
 
 ### Changed
+
 - LI.FI quote requests now default to `allowDestinationCall=false`, filtering out routes that require destination-chain calls/swaps and may leave users with intermediary tokens. Callers can set `allowDestinationCall: true` to opt back in.
 
 ## [0.2.0] — 2026-07-06
 
 ### Added
+
 - TypeScript declarations generated from JSDoc: `npm run build:types` emits `types/` via `tsc`; `types` field and `types` export condition added to package.json. Public typedefs (`LifiSwidgeProtocolConfig`, `LifiRouteOrder`, `SwidgeStatusOptions`) re-exported from `index.js` and `bare.js`.
 - Central HTTP request layer (`src/request.js`) modeled on the LI.FI SDK: per-request timeouts (default 30s), retries with exponential backoff on transient failures (5xx, network errors, timeouts; default 1 retry), and 429 handling that honors the `Retry-After` header. Configurable via new `timeout`, `retries`, and `retryDelay` config keys.
 - Typed error classification mirroring the LI.FI SDK's status-code mapping: `LifiTimeoutError`, `LifiNetworkError`, `LifiRateLimitError`, `LifiSlippageError` (409, subclass of `LifiQuoteError`), `LifiValidationError`, `LifiUntrustedContractError` (subclass of `LifiExecutionError`).
@@ -36,6 +47,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - 26 new unit tests covering retries, timeouts, rate limiting, error classification, input validation, and the contract allowlist.
 
 ### Changed
+
 - Renamed the npm package to `@lifi/wdk-protocol-swidge-lifi` and updated package metadata for the `lifinance/wdk-lifi-swidge-protocol` repository.
 - `denyBridges` now overrides the built-in native-value bridge deny list instead of appending to it, so callers can pass `denyBridges: []` to clear the default list.
 - API requests that previously hung indefinitely now fail with `LifiTimeoutError` after the configured timeout; transient 5xx/429 failures are retried before surfacing an error.
@@ -46,22 +58,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [0.1.2] — 2026-06-01
 
 ### Fixed
+
 - `_resolveToToken` now performs a proper destination-chain token lookup instead of passing the source symbol directly. The old approach failed for tokens that are rebranded on the destination chain (e.g. Ethereum USDT → Arbitrum USDT0). Resolution now fetches source token metadata, searches the destination chain's token list, and selects the highest-market-cap stablecoin matching symbol, `coinKey`, or a `{symbol}0` variant.
 - `LifiQuoteError` was missing from test imports, causing four tests to pass vacuously.
 
 ### Changed
+
 - Integration tests overhauled: split into three credential tiers, Tier 1 (discovery) runs against the live LI.FI API without any env vars, Tier 2 (quotes) runs against mainnet tokens without funds.
 - Status test updated: the all-zeros hash resolves to a real LI.FI transaction (HTTP 200); the test now uses a genuinely non-existent hash that returns 404.
 
 ## [0.1.1] — 2026-06-01
 
 ### Fixed
+
 - Repository URL updated to `github.com/kenny-io/wdk-lifi-swidge-protocol`.
 - Support channel updated to `help.li.fi/hc/en-us`.
 
 ## [0.1.0] — 2026-06-01
 
 ### Added
+
 - Initial implementation of `LifiSwidgeProtocol` extending `SwidgeProtocol` from `@tetherto/wdk-wallet@1.0.0-beta.9`.
 - `quoteSwidge(options)` — non-binding quote supporting exact-in and exact-out modes.
 - `swidge(options, config)` — executes swap, bridge, or combined swap+bridge via LI.FI.
