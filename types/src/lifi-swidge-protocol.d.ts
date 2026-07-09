@@ -46,12 +46,15 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
      * For tokens that revert on non-zero-to-non-zero approval (e.g. USDT on Ethereum),
      * a reset-to-zero transaction is sent first.
      *
-     * @param {SwidgeOptions} options - Route options: token pair, destination chain, amount (exact-in or exact-out), slippage, and recipient.
-     * @param {LifiSwidgeProtocolConfig} [config] - Per-call overrides for fee caps, the `minAmountOut` execution guard, and ERC-4337 config.
+     * @param {SwidgeOptions} options - Route options: token pair, destination chain, amount (exact-in or exact-out), slippage, recipient,
+     *   and the optional `minAmountOut` execution guard for quote-first flows — pass the `toTokenAmountMin` from a previously displayed
+     *   `quoteSwidge()` result, and `swidge()` throws before any approval or transaction is sent if the fresh execution quote's
+     *   `toAmountMin` falls below it. Not forwarded to LI.FI.
+     * @param {LifiSwidgeProtocolConfig} [config] - Per-call overrides for fee caps and ERC-4337 config.
      * @returns {Promise<SwidgeResult>} The bridge transaction hash (as `id` and `hash`), fees, all sent transactions, and quoted amounts.
      * @throws {LifiReadOnlyAccountError} If the bound account is read-only or absent.
      * @throws {LifiConfigurationError} If no connected provider is available.
-     * @throws {LifiValidationError} If the options, config, or the quote's transaction data fail validation.
+     * @throws {LifiValidationError} If the options or the quote's transaction data fail validation.
      * @throws {LifiExecutionError} If a fee cap is exceeded or the quote falls below `minAmountOut` before any transaction is sent.
      * @throws {LifiUntrustedContractError} If `trustedContracts` is enabled and the quote targets an unknown contract.
      * @throws {LifiQuoteError} If LI.FI cannot produce a route or the quote API request fails.
@@ -174,14 +177,6 @@ export type LifiSwidgeProtocolConfig = {
      * may leave the user with an intermediary token if the destination call cannot complete.
      */
     allowDestinationCall?: boolean | undefined;
-    /**
-     * - Execution guard for quote-first flows, meant to be
-     * passed per call as the second argument of `swidge()`: pass the `toTokenAmountMin` from a previously
-     * displayed `quoteSwidge()` result, and `swidge()` throws before any approval or transaction is sent if
-     * the fresh execution quote's `toAmountMin` falls below it. Not forwarded to LI.FI and not part of the
-     * WDK-standard `SwidgeOptions` — it is specific to this package.
-     */
-    minAmountOut?: string | number | bigint | undefined;
     /**
      * - Whether `swidge()` may execute quotes whose transaction
      * requires native token value (`transactionRequest.value > 0`). Set false for gasless setups

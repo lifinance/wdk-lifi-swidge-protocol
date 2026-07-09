@@ -19,7 +19,7 @@ import { JsonRpcProvider, BrowserProvider, Contract } from 'ethers'
 
 import { LIFI_API_URL, CHAINS } from './lifi-config.js'
 import { request } from './request.js'
-import { validateSwidgeOptions, validateSwidgeConfig, validateQuoteTransaction } from './validation.js'
+import { validateSwidgeOptions, validateQuoteTransaction } from './validation.js'
 import {
   LifiConfigurationError,
   LifiQuoteError,
@@ -75,11 +75,6 @@ import {
  *   execute a destination-chain call, such as a destination-chain swap. When omitted, LI.FI's own
  *   default (true) applies, giving the widest route coverage. Set false to filter out routes that
  *   may leave the user with an intermediary token if the destination call cannot complete.
- * @property {string | number | bigint} [minAmountOut] - Execution guard for quote-first flows, meant to be
- *   passed per call as the second argument of `swidge()`: pass the `toTokenAmountMin` from a previously
- *   displayed `quoteSwidge()` result, and `swidge()` throws before any approval or transaction is sent if
- *   the fresh execution quote's `toAmountMin` falls below it. Not forwarded to LI.FI and not part of the
- *   WDK-standard `SwidgeOptions` — it is specific to this package.
  * @property {boolean} [allowNativeValue=true] - Whether `swidge()` may execute quotes whose transaction
  *   requires native token value (`transactionRequest.value > 0`). Set false for gasless setups
  *   (e.g. ERC-4337 with a paymaster): such quotes are then rejected before any approval is sent.
@@ -165,6 +160,10 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
   /**
    * Returns a non-binding quote for a swap, bridge, or combined swap+bridge operation.
    *
+   * `minAmountOut` is not applied at quote time — quoting is a read-only price check, so the
+   * amounts are always returned for the app to display and compare. The guard is enforced by
+   * `swidge()` before execution.
+   *
    * @param {SwidgeOptions} options - Route options: token pair, destination chain, amount (exact-in or exact-out), slippage, and recipient.
    * @returns {Promise<SwidgeQuote>} Non-binding amounts, fees, estimated duration, and price impact for the route.
    * @throws {LifiConfigurationError} If no connected provider is available.
@@ -218,12 +217,15 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
    * For tokens that revert on non-zero-to-non-zero approval (e.g. USDT on Ethereum),
    * a reset-to-zero transaction is sent first.
    *
-   * @param {SwidgeOptions} options - Route options: token pair, destination chain, amount (exact-in or exact-out), slippage, and recipient.
-   * @param {LifiSwidgeProtocolConfig} [config] - Per-call overrides for fee caps, the `minAmountOut` execution guard, and ERC-4337 config.
+   * @param {SwidgeOptions} options - Route options: token pair, destination chain, amount (exact-in or exact-out), slippage, recipient,
+   *   and the optional `minAmountOut` execution guard for quote-first flows — pass the `toTokenAmountMin` from a previously displayed
+   *   `quoteSwidge()` result, and `swidge()` throws before any approval or transaction is sent if the fresh execution quote's
+   *   `toAmountMin` falls below it. Not forwarded to LI.FI.
+   * @param {LifiSwidgeProtocolConfig} [config] - Per-call overrides for fee caps and ERC-4337 config.
    * @returns {Promise<SwidgeResult>} The bridge transaction hash (as `id` and `hash`), fees, all sent transactions, and quoted amounts.
    * @throws {LifiReadOnlyAccountError} If the bound account is read-only or absent.
    * @throws {LifiConfigurationError} If no connected provider is available.
-   * @throws {LifiValidationError} If the options, config, or the quote's transaction data fail validation.
+   * @throws {LifiValidationError} If the options or the quote's transaction data fail validation.
    * @throws {LifiExecutionError} If a fee cap is exceeded or the quote falls below `minAmountOut` before any transaction is sent.
    * @throws {LifiUntrustedContractError} If `trustedContracts` is enabled and the quote targets an unknown contract.
    * @throws {LifiQuoteError} If LI.FI cannot produce a route or the quote API request fails.
@@ -245,9 +247,8 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     validateSwidgeOptions(options)
 
     const effectiveConfig = { ...this._config, ...config }
-    validateSwidgeConfig(effectiveConfig)
 
-    const { fromToken, toToken, toChain, recipient, slippage, fromTokenAmount, toTokenAmount } = options
+    const { fromToken, toToken, toChain, recipient, slippage, fromTokenAmount, toTokenAmount, minAmountOut } = options
 
     const fromChainId = await this._getChainId()
     const toChainId = this._resolveChainId(toChain, fromChainId)
@@ -266,7 +267,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
       slippage
     }, effectiveConfig)
 
-    this._checkMinAmountOut(quote, effectiveConfig)
+    this._checkMinAmountOut(quote, minAmountOut)
     this._checkFeeCaps(quote, effectiveConfig)
 
     // Validate before approval: an untrusted target must be rejected before
@@ -628,8 +629,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
   // Guards quote-first flows: the fresh execution quote must not promise less
   // than the minimum the user accepted when the displayed quote was taken.
   /** @private */
-  _checkMinAmountOut (quote, effectiveConfig) {
-    const { minAmountOut } = effectiveConfig
+  _checkMinAmountOut (quote, minAmountOut) {
     if (minAmountOut === undefined) return
 
     if (BigInt(quote.estimate.toAmountMin) < BigInt(minAmountOut)) {

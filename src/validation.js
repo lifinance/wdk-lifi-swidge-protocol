@@ -70,10 +70,11 @@ function assertPositiveAmount (amount, label) {
  *
  * @param {SwidgeOptions} options - User-supplied swidge options to validate.
  * @throws {LifiValidationError} If a token identifier is missing, the recipient is not a valid
- *   address, slippage is outside the 0-1 range, or no positive amount is provided.
+ *   address, slippage is outside the 0-1 range, no positive amount is provided, or
+ *   `minAmountOut` is not a positive integer amount.
  */
 export function validateSwidgeOptions (options = {}) {
-  const { fromToken, toToken, recipient, slippage, fromTokenAmount, toTokenAmount } = options
+  const { fromToken, toToken, recipient, slippage, fromTokenAmount, toTokenAmount, minAmountOut } = options
 
   if (typeof fromToken !== 'string' || fromToken.length === 0) {
     throw new LifiValidationError("'fromToken' is required and must be a token address or symbol.")
@@ -93,16 +94,7 @@ export function validateSwidgeOptions (options = {}) {
   }
   assertPositiveAmount(fromTokenAmount, 'fromTokenAmount')
   assertPositiveAmount(toTokenAmount, 'toTokenAmount')
-}
-
-/**
- * Validates execution-guard config values before any API call is made.
- *
- * @param {LifiSwidgeProtocolConfig} [config] - Effective protocol config for this call.
- * @throws {LifiValidationError} If `minAmountOut` is provided but is not a positive integer amount.
- */
-export function validateSwidgeConfig (config = {}) {
-  assertPositiveAmount(config.minAmountOut, 'minAmountOut')
+  assertPositiveAmount(minAmountOut, 'minAmountOut')
 }
 
 // Builds the set of trusted contract addresses (lowercased) for a chain:

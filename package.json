@@ -48,7 +48,7 @@
     "changeset:publish": "npm run build:types && changeset publish"
   },
   "dependencies": {
-    "@tetherto/wdk-wallet": "1.0.0-beta.9",
+    "@tetherto/wdk-wallet": "1.0.0-beta.14",
     "bare-node-runtime": "^1.1.4",
     "ethers": "6.17.0"
   },
