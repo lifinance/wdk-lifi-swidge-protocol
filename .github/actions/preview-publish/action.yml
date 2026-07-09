@@ -6,6 +6,12 @@ description: >-
 runs:
   using: composite
   steps:
+    # Node 22's bundled npm (10.x) predates OIDC trusted publishing (added npm 11.5.1).
+    # Without this, `npm publish` runs unauthenticated and fails with a 404.
+    - name: Update npm for OIDC trusted publishing
+      shell: bash
+      run: npm install -g npm@^11.5.1
+
     # --snapshot is disallowed in pre mode; exit it in this throwaway checkout
     # only (never pushed). Stable-line repos have no pre.json.
     - name: Exit pre mode if active (ephemeral)

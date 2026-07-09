@@ -91,6 +91,11 @@ jobs:
           registry-url: https://registry.npmjs.org
           # No cache — privileged job, don't restore a potentially poisoned cache.
 
+      # Node 22's bundled npm (10.x) predates OIDC trusted publishing (added npm 11.5.1).
+      # Without this, `npm publish` runs unauthenticated and fails with a 404.
+      - name: Update npm for OIDC trusted publishing
+        run: npm install -g npm@^11.5.1
+
       - name: Install dependencies
         run: npm ci
 

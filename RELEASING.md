@@ -125,9 +125,11 @@ npx changeset pre exit
 - Ensure the workflow has `pull-requests: write` permission (already set)
 - Confirm the push is to `main` and the repo name matches `lifinance/wdk-lifi-swidge-protocol`
 
-**npm publish fails with 403**
+**npm publish fails with 403/404**
 
-- OIDC trusted publishing is not configured — follow the one-time setup above
+- OIDC trusted publishing isn't set up correctly. On the package's npmjs.com page → **Settings → Trusted Publisher**, confirm an entry exists for `lifinance/wdk-lifi-swidge-protocol`, workflow file `publish.yml` (must match `.github/workflows/publish.yml` exactly, including the `.yml` extension), with `npm publish` permission.
+- A brand-new package can't bootstrap via OIDC — trusted publishing only works once the package already exists on the registry. Do a one-time manual `npm publish --access public` (or use a temporary `NPM_TOKEN` secret) to create the first version, then configure the Trusted Publisher above for all subsequent releases.
+- The npm CLI must be ≥11.5.1 to support OIDC trusted publishing — `publish.yml` and the preview action both upgrade npm before publishing for this reason.
 - Or add `NPM_TOKEN` to the repository secrets as a fallback
 
 **Preview publish fails**
