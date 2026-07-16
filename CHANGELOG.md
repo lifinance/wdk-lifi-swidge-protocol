@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+### Patch Changes
+
+- [#4](https://github.com/lifinance/wdk-lifi-swidge-protocol/pull/4) [`16cf77d`](https://github.com/lifinance/wdk-lifi-swidge-protocol/commit/16cf77db2e299b0dc7ae1570b43a982f54c0a9fd) Thanks [@brucexu-eth](https://github.com/brucexu-eth)! - Map each quoted fee to its LI.FI cost token chain, and omit the optional chain when LI.FI does not provide one instead of assigning every fee to the source chain.
+
 ## 0.5.0
 
 ### Minor Changes
