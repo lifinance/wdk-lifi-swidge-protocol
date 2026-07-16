@@ -559,12 +559,15 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
   }
 
   // Maps LI.FI gasCosts and feeCosts to the SwidgeFee[] format:
-  // - gasCosts (SEND type) → type: 'network'  (gas/relayer costs, denominated in native token)
-  // - feeCosts             → type: 'protocol' (LI.FI's own fee, denominated in source token)
+  // - gasCosts (SEND type) → type: 'network'
+  // - feeCosts             → type: 'protocol'
+  // token.chainId identifies the chain of the token in which the cost is
+  // charged or denominated. It does not necessarily identify the chain where
+  // the underlying execution or gas consumption occurs. If LI.FI omits it,
+  // leave the optional SwidgeFee.chain unset rather than guessing.
   /** @private */
   _buildFees (quote) {
     const fees = []
-    const fromChainId = quote.action?.fromChainId
 
     for (const gc of (quote.estimate.gasCosts || [])) {
       if (gc.type !== 'SEND') continue
@@ -572,7 +575,9 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
         type: 'network',
         amount: BigInt(gc.amount),
         token: gc.token?.address || gc.token?.symbol || 'ETH',
-        chain: fromChainId,
+        ...(gc.token?.chainId !== undefined && gc.token?.chainId !== null
+          ? { chain: gc.token.chainId }
+          : {}),
         description: gc.name || 'Network fee'
       })
     }
@@ -582,7 +587,9 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
         type: 'protocol',
         amount: BigInt(fc.amount),
         token: fc.token?.address || quote.action?.fromToken?.address || '',
-        chain: fromChainId,
+        ...(fc.token?.chainId !== undefined && fc.token?.chainId !== null
+          ? { chain: fc.token.chainId }
+          : {}),
         included: Boolean(fc.included),
         description: fc.name || 'Protocol fee'
       })

@@ -55,7 +55,7 @@ const DUMMY_QUOTE = {
         amount: '2300',
         amountUSD: '0.002',
         included: true,
-        token: { symbol: 'USDT', address: TOKEN, decimals: 6 }
+        token: { symbol: 'USDT', address: TOKEN, decimals: 6, chainId: 1 }
       }
     ],
     gasCosts: [
@@ -64,7 +64,7 @@ const DUMMY_QUOTE = {
         name: 'Network fee',
         amount: '155728000000000',
         amountUSD: '0.41',
-        token: { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18 }
+        token: { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18, chainId: 1 }
       }
     ]
   },
@@ -233,6 +233,91 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         })
 
         expect(fees).toEqual(EXPECTED_FEES)
+      })
+
+      test('uses fee token chains without inferring the execution chain', async () => {
+        global.fetch = jest.fn().mockImplementation((url) => {
+          if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
+          if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              ...DUMMY_QUOTE,
+              action: {
+                ...DUMMY_QUOTE.action,
+                fromChainId: 100,
+                toChainId: 137
+              },
+              estimate: {
+                ...DUMMY_QUOTE.estimate,
+                gasCosts: [
+                  {
+                    type: 'SEND',
+                    name: 'Destination network fee',
+                    amount: '100',
+                    token: { symbol: 'MATIC', chainId: 137 }
+                  },
+                  {
+                    type: 'SEND',
+                    name: 'Unknown-chain network fee',
+                    amount: '200',
+                    token: { symbol: 'ETH' }
+                  }
+                ],
+                feeCosts: [
+                  {
+                    name: 'Gas Fee',
+                    description: 'Covers gas expense for sending funds to user on receiving chain.',
+                    amount: '300',
+                    included: true,
+                    token: { symbol: 'MIVA', address: TOKEN, chainId: 100 }
+                  },
+                  {
+                    name: 'Unknown-chain protocol fee',
+                    amount: '400',
+                    included: false,
+                    token: { symbol: 'USDC', address: TOKEN }
+                  }
+                ]
+              }
+            })
+          })
+        })
+
+        const { fees } = await protocol.quoteSwidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        })
+
+        expect(fees).toEqual([
+          {
+            type: 'network',
+            amount: 100n,
+            token: 'MATIC',
+            chain: 137,
+            description: 'Destination network fee'
+          },
+          {
+            type: 'network',
+            amount: 200n,
+            token: 'ETH',
+            description: 'Unknown-chain network fee'
+          },
+          {
+            type: 'protocol',
+            amount: 300n,
+            token: TOKEN,
+            chain: 100,
+            included: true,
+            description: 'Gas Fee'
+          },
+          {
+            type: 'protocol',
+            amount: 400n,
+            token: TOKEN,
+            included: false,
+            description: 'Unknown-chain protocol fee'
+          }
+        ])
       })
 
       test('resolves toToken to destination address when fromToken === toToken cross-chain', async () => {
