@@ -235,7 +235,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
         expect(fees).toEqual(EXPECTED_FEES)
       })
 
-      test('uses each fee token chain and omits chain when LI.FI does not provide one', async () => {
+      test('uses fee token chains without inferring the execution chain', async () => {
         global.fetch = jest.fn().mockImplementation((url) => {
           if (url.includes('/tokens')) return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
           if (url.includes('/token')) return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
@@ -243,6 +243,11 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
             ok: true,
             json: async () => ({
               ...DUMMY_QUOTE,
+              action: {
+                ...DUMMY_QUOTE.action,
+                fromChainId: 100,
+                toChainId: 137
+              },
               estimate: {
                 ...DUMMY_QUOTE.estimate,
                 gasCosts: [
@@ -250,7 +255,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
                     type: 'SEND',
                     name: 'Destination network fee',
                     amount: '100',
-                    token: { symbol: 'ETH', chainId: 42161 }
+                    token: { symbol: 'MATIC', chainId: 137 }
                   },
                   {
                     type: 'SEND',
@@ -261,10 +266,11 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
                 ],
                 feeCosts: [
                   {
-                    name: 'Destination protocol fee',
+                    name: 'Gas Fee',
+                    description: 'Covers gas expense for sending funds to user on receiving chain.',
                     amount: '300',
                     included: true,
-                    token: { symbol: 'USDC', address: TOKEN, chainId: 42161 }
+                    token: { symbol: 'MIVA', address: TOKEN, chainId: 100 }
                   },
                   {
                     name: 'Unknown-chain protocol fee',
@@ -286,8 +292,8 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
           {
             type: 'network',
             amount: 100n,
-            token: 'ETH',
-            chain: 42161,
+            token: 'MATIC',
+            chain: 137,
             description: 'Destination network fee'
           },
           {
@@ -300,9 +306,9 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
             type: 'protocol',
             amount: 300n,
             token: TOKEN,
-            chain: 42161,
+            chain: 100,
             included: true,
-            description: 'Destination protocol fee'
+            description: 'Gas Fee'
           },
           {
             type: 'protocol',

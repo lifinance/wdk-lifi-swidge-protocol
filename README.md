@@ -225,9 +225,11 @@ Raw numeric chain IDs are also accepted.
 | `gasCosts[].type === 'SEND'` | `network` | `fee` |
 | `feeCosts[]` | `protocol` | `bridgeFee` |
 
-Each fee uses its LI.FI cost token's `chainId` when available. If LI.FI does not
-identify the token chain, the optional `chain` field is omitted rather than
-assuming that the fee belongs to the source chain.
+Each fee uses its LI.FI cost token's `chainId` when available. This identifies
+the chain where the fee token is charged or denominated, which may differ from
+the chain where the underlying execution or gas consumption occurs. If LI.FI
+does not identify the token chain, the optional `chain` field is omitted rather
+than inferred from the route.
 
 ## Error types
 

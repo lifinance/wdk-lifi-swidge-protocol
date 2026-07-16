@@ -561,8 +561,10 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
   // Maps LI.FI gasCosts and feeCosts to the SwidgeFee[] format:
   // - gasCosts (SEND type) → type: 'network'
   // - feeCosts             → type: 'protocol'
-  // A cost's token identifies its chain. If LI.FI omits token.chainId, leave the
-  // optional SwidgeFee.chain unset rather than assuming the source chain.
+  // token.chainId identifies the chain of the token in which the cost is
+  // charged or denominated. It does not necessarily identify the chain where
+  // the underlying execution or gas consumption occurs. If LI.FI omits it,
+  // leave the optional SwidgeFee.chain unset rather than guessing.
   /** @private */
   _buildFees (quote) {
     const fees = []
