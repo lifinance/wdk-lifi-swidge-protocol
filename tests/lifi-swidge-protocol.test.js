@@ -1104,6 +1104,8 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
     const ERC20_INTERFACE = new ethers.Interface(['function approve(address spender, uint256 amount) returns (bool)'])
     const EXPECTED_APPROVE_DATA = ERC20_INTERFACE.encodeFunctionData('approve', [APPROVAL_ADDRESS, 1_000_000n])
     const EXPECTED_RESET_DATA = ERC20_INTERFACE.encodeFunctionData('approve', [APPROVAL_ADDRESS, 0n])
+    const PAYMASTER_TOKEN = '0x000000000000000000000000000000000000A11E'
+    const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
 
     let account, protocol
 
@@ -1142,7 +1144,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
 
         expect(account.sendTransaction).toHaveBeenCalledTimes(1)
         expect(account.sendTransaction).toHaveBeenCalledWith([
-          { to: TOKEN, data: EXPECTED_APPROVE_DATA },
+          { to: TOKEN, data: EXPECTED_APPROVE_DATA, value: 0n },
           {
             to: APPROVAL_ADDRESS,
             data: DUMMY_QUOTE.transactionRequest.data,
@@ -1243,8 +1245,8 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
 
         expect(account.sendTransaction).toHaveBeenCalledTimes(1)
         expect(account.sendTransaction.mock.calls[0][0]).toEqual([
-          { to: TOKEN, data: EXPECTED_RESET_DATA },
-          { to: TOKEN, data: EXPECTED_APPROVE_DATA },
+          { to: TOKEN, data: EXPECTED_RESET_DATA, value: 0n },
+          { to: TOKEN, data: EXPECTED_APPROVE_DATA, value: 0n },
           {
             to: APPROVAL_ADDRESS,
             data: DUMMY_QUOTE.transactionRequest.data,
@@ -1335,6 +1337,213 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
           { maxProtocolFeeBps: 1 }
         )).rejects.toThrow('Protocol fee exceeds maxProtocolFeeBps limit.')
       })
+
+      test('reports the network fee sendTransaction already quoted for the batch, in the paymaster token', async () => {
+        account._config.paymasterToken = { address: PAYMASTER_TOKEN }
+        account.sendTransaction = jest.fn().mockResolvedValue({ hash: DUMMY_USER_OP_HASH, fee: 777_000n })
+        account.quoteSendTransaction = jest.fn()
+
+        const result = await protocol.swidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        })
+
+        expect(result.fees).toContainEqual({
+          type: 'network',
+          amount: 777_000n,
+          token: PAYMASTER_TOKEN,
+          chain: 1,
+          description: 'Network fee'
+        })
+        // Must reuse the fee sendTransaction already computed for this exact
+        // batch, not re-quote afterward — by then the approval it just sent may
+        // already be on-chain, which would make a fresh allowance check think no
+        // approval was needed and under-report the fee that was actually paid.
+        expect(account.quoteSendTransaction).not.toHaveBeenCalled()
+      })
+
+      test('does not include LI.FI\'s gasCosts-derived fee alongside the self-quoted one', async () => {
+        account.sendTransaction = jest.fn().mockResolvedValue({ hash: DUMMY_USER_OP_HASH, fee: 1n })
+
+        const result = await protocol.swidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        })
+
+        expect(result.fees.filter(f => f.type === 'network')).toHaveLength(1)
+      })
+    })
+
+    describe('quoteSwidge', () => {
+      beforeEach(() => {
+        allowanceMock.mockResolvedValue(0n)
+      })
+
+      test('self-quotes the network fee for the exact approve+bridge batch swidge() would send', async () => {
+        account._config.paymasterToken = { address: PAYMASTER_TOKEN }
+        account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 555_000n })
+
+        const quote = await protocol.quoteSwidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        })
+
+        expect(account.quoteSendTransaction).toHaveBeenCalledWith([
+          { to: TOKEN, data: EXPECTED_APPROVE_DATA, value: 0n },
+          {
+            to: APPROVAL_ADDRESS,
+            data: DUMMY_QUOTE.transactionRequest.data,
+            value: 0n,
+            gasLimit: 300_000n
+          }
+        ], undefined)
+        expect(quote.fees).toContainEqual({
+          type: 'network',
+          amount: 555_000n,
+          token: PAYMASTER_TOKEN,
+          chain: 1,
+          description: 'Network fee'
+        })
+      })
+
+      test('reports the fee in the native token when useNativeCoins is set', async () => {
+        account._config.useNativeCoins = true
+        account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 42_000_000_000_000n })
+
+        const quote = await protocol.quoteSwidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        })
+
+        const networkFee = quote.fees.find(f => f.type === 'network')
+        expect(networkFee.amount).toBe(42_000_000_000_000n)
+        expect(networkFee.token).toBe(NATIVE_TOKEN_ADDRESS)
+      })
+
+      test('reports a zero fee when isSponsored is set', async () => {
+        account._config.isSponsored = true
+        account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 0n })
+
+        const quote = await protocol.quoteSwidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        })
+
+        const networkFee = quote.fees.find(f => f.type === 'network')
+        expect(networkFee.amount).toBe(0n)
+        expect(networkFee.token).toBe(NATIVE_TOKEN_ADDRESS)
+      })
+
+      test('never reports LI.FI\'s gasCosts-derived amount for an ERC-4337 account', async () => {
+        account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 123n })
+
+        const quote = await protocol.quoteSwidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        })
+
+        const networkFees = quote.fees.filter(f => f.type === 'network')
+        expect(networkFees).toHaveLength(1)
+        expect(networkFees[0].amount).toBe(123n)
+        expect(networkFees[0].amount).not.toBe(BigInt(DUMMY_QUOTE.estimate.gasCosts[0].amount))
+      })
+
+      test('falls back to LI.FI\'s gasCosts-derived fee when the account address cannot be resolved', async () => {
+        account.getAddress = jest.fn().mockRejectedValue(new Error('address unavailable'))
+        account.quoteSendTransaction = jest.fn()
+
+        const quote = await protocol.quoteSwidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        })
+
+        expect(account.quoteSendTransaction).not.toHaveBeenCalled()
+        expect(quote.fees).toEqual(EXPECTED_FEES)
+      })
+
+      test('per-call config LI.FI routing options reach the quote API', async () => {
+        account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 1n })
+
+        await protocol.quoteSwidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        }, { order: 'FASTEST' })
+
+        expect(global.fetch).toHaveBeenCalledWith(
+          `${LIFI_API}/quote?fromChain=1&toChain=42161&fromToken=${TOKEN}&toToken=${TOKEN}&fromAmount=1000000&fromAddress=${USER_ADDRESS}&order=FASTEST`,
+          FETCH_OPTS
+        )
+      })
+
+      test('per-call config paymasterToken overrides the account default for the self-quoted fee', async () => {
+        const OVERRIDE_PAYMASTER_TOKEN = '0x000000000000000000000000000000000000B22F'
+        account._config.paymasterToken = { address: PAYMASTER_TOKEN }
+        account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 999n })
+
+        const quote = await protocol.quoteSwidge({
+          fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+        }, { paymasterToken: { address: OVERRIDE_PAYMASTER_TOKEN } })
+
+        expect(account.quoteSendTransaction).toHaveBeenCalledWith(
+          expect.any(Array),
+          { paymasterToken: { address: OVERRIDE_PAYMASTER_TOKEN } }
+        )
+        const networkFee = quote.fees.find(f => f.type === 'network')
+        expect(networkFee.token).toBe(OVERRIDE_PAYMASTER_TOKEN)
+        expect(networkFee.amount).toBe(999n)
+      })
+    })
+  })
+
+  // The worker's own read-only wallet factory quotes with exactly this class
+  // (no private key — gasless quoting), not WalletAccountEvmErc4337. It's the
+  // base class of WalletAccountEvmErc4337, not a subclass, so a naive
+  // constructor-name check on the writable class alone would silently miss it
+  // and fall back to LI.FI's plain-EOA estimate for every quote-only caller.
+  describe('with WalletAccountReadOnlyEvmErc4337 (quote-only)', () => {
+    const ERC20_INTERFACE = new ethers.Interface(['function approve(address spender, uint256 amount) returns (bool)'])
+    const EXPECTED_APPROVE_DATA = ERC20_INTERFACE.encodeFunctionData('approve', [APPROVAL_ADDRESS, 1_000_000n])
+    const PAYMASTER_TOKEN = '0x000000000000000000000000000000000000A11E'
+
+    let account, protocol
+
+    beforeEach(() => {
+      account = new WalletAccountReadOnlyEvmErc4337(USER_ADDRESS, {
+        chainId: 1,
+        provider: 'https://dummy-rpc-url.com',
+        paymasterToken: { address: PAYMASTER_TOKEN }
+      })
+      protocol = new LifiSwidgeProtocol(account)
+      getNetworkMock.mockResolvedValue({ chainId: 1n })
+      allowanceMock.mockResolvedValue(0n)
+      mockFetch()
+    })
+
+    test('_isErc4337Account() recognizes the read-only base class', () => {
+      expect(protocol._isErc4337Account()).toBe(true)
+    })
+
+    test('quoteSwidge self-quotes the network fee instead of falling back to LI.FI\'s gasCosts estimate', async () => {
+      account.quoteSendTransaction = jest.fn().mockResolvedValue({ fee: 555_000n })
+
+      const quote = await protocol.quoteSwidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })
+
+      expect(account.quoteSendTransaction).toHaveBeenCalledWith([
+        { to: TOKEN, data: EXPECTED_APPROVE_DATA, value: 0n },
+        {
+          to: APPROVAL_ADDRESS,
+          data: DUMMY_QUOTE.transactionRequest.data,
+          value: 0n,
+          gasLimit: 300_000n
+        }
+      ], undefined)
+      expect(quote.fees).toContainEqual({
+        type: 'network',
+        amount: 555_000n,
+        token: PAYMASTER_TOKEN,
+        chain: 1,
+        description: 'Network fee'
+      })
+    })
+
+    test('swidge still refuses to execute on a read-only account regardless of ERC-4337 detection', async () => {
+      await expect(protocol.swidge({
+        fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n
+      })).rejects.toThrow('swidge() requires a writable account.')
     })
   })
 

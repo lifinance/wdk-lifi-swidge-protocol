@@ -1,4 +1,5 @@
 export type LifiSwidgeProtocolConfig = import("./src/lifi-swidge-protocol.js").LifiSwidgeProtocolConfig;
+export type LifiSwidgeCallConfig = import("./src/lifi-swidge-protocol.js").LifiSwidgeCallConfig;
 export type LifiRouteOrder = import("./src/lifi-swidge-protocol.js").LifiRouteOrder;
 export type SwidgeStatusOptions = import("./src/lifi-swidge-protocol.js").SwidgeStatusOptions;
 export type LifiSwidgeResult = import("./src/lifi-swidge-protocol.js").LifiSwidgeResult;

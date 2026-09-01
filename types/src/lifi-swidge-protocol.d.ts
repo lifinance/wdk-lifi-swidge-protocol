@@ -24,10 +24,10 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
      * Only `quoteSwidge`, `getSwidgeStatus`, `getSupportedChains`, and `getSupportedTokens` are available.
      *
      * @overload
-     * @param {WalletAccountReadOnlyEvm} account - Read-only account used to derive the source address for quotes.
+     * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337} account - Read-only EOA or ERC-4337 account used to derive the source address and quote fees.
      * @param {LifiSwidgeProtocolConfig} [config] - Fee caps, LI.FI routing options, and reliability/security settings.
      */
-    constructor(account: WalletAccountReadOnlyEvm, config?: LifiSwidgeProtocolConfig | undefined);
+    constructor(account: WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337, config?: LifiSwidgeProtocolConfig | undefined);
     /**
      * Creates a full LI.FI Swidge protocol capable of executing swap and bridge operations.
      *
@@ -41,6 +41,22 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     /** @private */
     private _provider;
     /**
+     * Returns a non-binding quote for a swap, bridge, or combined swap+bridge operation.
+     *
+     * `minAmountOut` is not applied at quote time — quoting is a read-only price check, so the
+     * amounts are always returned for the app to display and compare. The guard is enforced by
+     * `swidge()` before execution.
+     *
+     * @param {SwidgeOptions} options - Route options: token pair, destination chain, amount (exact-in or exact-out), slippage, and recipient.
+     * @param {LifiSwidgeCallConfig} [config] - Per-call overrides for LI.FI routing and ERC-4337 config; pass the same value given to `swidge()` so the self-quoted fee matches.
+     * @returns {Promise<SwidgeQuote>} Non-binding amounts, fees, estimated duration, and price impact for the route.
+     * @throws {LifiConfigurationError} If no connected provider is available.
+     * @throws {LifiValidationError} If the options fail validation (missing token, invalid recipient, slippage outside 0-1, no positive amount).
+     * @throws {LifiUnsupportedChainError} If `toChain` is a chain name not present in the supported chains map.
+     * @throws {LifiQuoteError} If LI.FI cannot produce a route or the quote API request fails.
+     */
+    quoteSwidge(options: SwidgeOptions, config?: LifiSwidgeCallConfig): Promise<SwidgeQuote>;
+    /**
      * Executes a swap, bridge, or combined swap+bridge operation.
      * Handles ERC-20 approval automatically, granting only the exact amount required.
      * For tokens that revert on non-zero-to-non-zero approval (e.g. USDT on Ethereum),
@@ -51,7 +67,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
      *   and the optional `minAmountOut` execution guard for quote-first flows — pass the `toTokenAmountMin` from a previously displayed
      *   `quoteSwidge()` result, and `swidge()` throws before any approval or transaction is sent if the fresh execution quote's
      *   `toAmountMin` falls below it. Not forwarded to LI.FI.
-     * @param {LifiSwidgeProtocolConfig} [config] - Per-call overrides for fee caps and ERC-4337 config.
+     * @param {LifiSwidgeCallConfig} [config] - Per-call overrides for fee caps, LI.FI routing, and ERC-4337 config.
      * @returns {Promise<LifiSwidgeResult>} The canonical source transaction hash (as `id` and `hash`), fees, all sent transactions, and quoted amounts.
      * @throws {LifiReadOnlyAccountError} If the bound account is read-only or absent.
      * @throws {LifiConfigurationError} If no connected provider is available.
@@ -60,7 +76,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
      * @throws {LifiUntrustedContractError} If `trustedContracts` is enabled and the quote targets an unknown contract.
      * @throws {LifiQuoteError} If LI.FI cannot produce a route or the quote API request fails.
      */
-    swidge(options: SwidgeOptions, config?: LifiSwidgeProtocolConfig): Promise<LifiSwidgeResult>;
+    swidge(options: SwidgeOptions, config?: LifiSwidgeCallConfig): Promise<LifiSwidgeResult>;
     /** @private */
     private _getChainId;
     /** @private */
@@ -93,6 +109,12 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     private _buildBridgeTx;
     /** @private */
     private _buildApprovalTxs;
+    /** @private */
+    private _quoteErc4337NetworkFee;
+    /** @private */
+    private _buildErc4337Batch;
+    /** @private */
+    private _resolveErc4337FeeToken;
     /** @private */
     private _handleApproval;
     /**
@@ -140,6 +162,8 @@ export type SwidgeSupportedTokensOptions = import("@tetherto/wdk-wallet/protocol
 export type WalletAccountEvm = import("@tetherto/wdk-wallet-evm").WalletAccountEvm;
 export type WalletAccountReadOnlyEvm = import("@tetherto/wdk-wallet-evm").WalletAccountReadOnlyEvm;
 export type WalletAccountEvmErc4337 = import("@tetherto/wdk-wallet-evm-erc-4337").WalletAccountEvmErc4337;
+export type WalletAccountReadOnlyEvmErc4337 = import("@tetherto/wdk-wallet-evm-erc-4337").WalletAccountReadOnlyEvmErc4337;
+export type EvmErc4337WalletConfig = import("@tetherto/wdk-wallet-evm-erc-4337").EvmErc4337WalletConfig;
 export type Eip1193Provider = import("ethers").Eip1193Provider;
 /**
  * Route selection strategy forwarded to the LI.FI quote API.
@@ -234,4 +258,5 @@ export type LifiSwidgeProtocolConfig = {
      */
     trustedContracts?: true | Record<number, string | string[]> | undefined;
 };
+export type LifiSwidgeCallConfig = LifiSwidgeProtocolConfig & Partial<EvmErc4337WalletConfig>;
 import { SwidgeProtocol } from '@tetherto/wdk-wallet/protocols';

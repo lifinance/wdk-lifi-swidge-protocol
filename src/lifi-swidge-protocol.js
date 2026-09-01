@@ -45,6 +45,8 @@ const USER_OP_RECEIPT_READ_TIMEOUT_MS = 15_000
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountEvm} WalletAccountEvm */
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
 /** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountEvmErc4337} WalletAccountEvmErc4337 */
+/** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountReadOnlyEvmErc4337} WalletAccountReadOnlyEvmErc4337 */
+/** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').EvmErc4337WalletConfig} EvmErc4337WalletConfig */
 /** @typedef {import('ethers').Eip1193Provider} Eip1193Provider */
 
 /**
@@ -96,10 +98,13 @@ const USER_OP_RECEIPT_READ_TIMEOUT_MS = 15_000
  *   matching LI.FI SDK behavior.
  */
 
+/** @typedef {LifiSwidgeProtocolConfig & Partial<EvmErc4337WalletConfig>} LifiSwidgeCallConfig */
+
 const ERC20_ABI = [
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)'
 ]
+const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
 
 /**
  * Bridge protocols known to require native token value in the source transaction.
@@ -135,7 +140,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
    * Only `quoteSwidge`, `getSwidgeStatus`, `getSupportedChains`, and `getSupportedTokens` are available.
    *
    * @overload
-   * @param {WalletAccountReadOnlyEvm} account - Read-only account used to derive the source address for quotes.
+   * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337} account - Read-only EOA or ERC-4337 account used to derive the source address and quote fees.
    * @param {LifiSwidgeProtocolConfig} [config] - Fee caps, LI.FI routing options, and reliability/security settings.
    */
 
@@ -170,13 +175,14 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
    * `swidge()` before execution.
    *
    * @param {SwidgeOptions} options - Route options: token pair, destination chain, amount (exact-in or exact-out), slippage, and recipient.
+   * @param {LifiSwidgeCallConfig} [config] - Per-call overrides for LI.FI routing and ERC-4337 config; pass the same value given to `swidge()` so the self-quoted fee matches.
    * @returns {Promise<SwidgeQuote>} Non-binding amounts, fees, estimated duration, and price impact for the route.
    * @throws {LifiConfigurationError} If no connected provider is available.
    * @throws {LifiValidationError} If the options fail validation (missing token, invalid recipient, slippage outside 0-1, no positive amount).
    * @throws {LifiUnsupportedChainError} If `toChain` is a chain name not present in the supported chains map.
    * @throws {LifiQuoteError} If LI.FI cannot produce a route or the quote API request fails.
    */
-  async quoteSwidge (options) {
+  async quoteSwidge (options, config) {
     if (!this._provider) {
       throw new LifiConfigurationError(
         'A connected provider is required to fetch quotes. ' +
@@ -185,6 +191,8 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     }
 
     validateSwidgeOptions(options)
+
+    const effectiveConfig = { ...this._config, ...config }
 
     const { fromToken, toToken, toChain, recipient, slippage, fromTokenAmount, toTokenAmount } = options
 
@@ -204,13 +212,19 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
       fromAddress,
       toAddress: recipient,
       slippage
-    }, this._config)
+    }, effectiveConfig)
+
+    let erc4337NetworkFee
+    if (this._isErc4337Account() && fromAddress) {
+      const amount = await this._quoteErc4337NetworkFee(quote, fromToken, fromAddress, config)
+      erc4337NetworkFee = { amount, token: this._resolveErc4337FeeToken(config), chain: fromChainId }
+    }
 
     return {
       fromTokenAmount: BigInt(quote.estimate.fromAmount),
       toTokenAmount: BigInt(quote.estimate.toAmount),
       toTokenAmountMin: BigInt(quote.estimate.toAmountMin),
-      fees: this._buildFees(quote),
+      fees: this._buildFees(quote, erc4337NetworkFee),
       estimatedDuration: quote.estimate.executionDuration,
       priceImpact: quote.estimate.priceImpact !== undefined ? Number(quote.estimate.priceImpact) : undefined
     }
@@ -227,7 +241,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
    *   and the optional `minAmountOut` execution guard for quote-first flows — pass the `toTokenAmountMin` from a previously displayed
    *   `quoteSwidge()` result, and `swidge()` throws before any approval or transaction is sent if the fresh execution quote's
    *   `toAmountMin` falls below it. Not forwarded to LI.FI.
-   * @param {LifiSwidgeProtocolConfig} [config] - Per-call overrides for fee caps and ERC-4337 config.
+   * @param {LifiSwidgeCallConfig} [config] - Per-call overrides for fee caps, LI.FI routing, and ERC-4337 config.
    * @returns {Promise<LifiSwidgeResult>} The canonical source transaction hash (as `id` and `hash`), fees, all sent transactions, and quoted amounts.
    * @throws {LifiReadOnlyAccountError} If the bound account is read-only or absent.
    * @throws {LifiConfigurationError} If no connected provider is available.
@@ -286,19 +300,17 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     let approveHash
     let resetAllowanceHash
     let bridgeHash
+    let erc4337NetworkFee
     let txHashUnresolved = false
     if (this._isErc4337Account()) {
-      const approvalTxs = await this._buildApprovalTxs(
-        fromToken,
-        fromAddress,
-        quote.estimate.approvalAddress,
-        BigInt(quote.estimate.fromAmount),
-        quote.estimate.skipApproval
-      )
-
       // A single UserOperation keeps the Safe nonce stable while ensuring the
       // allowance changes and bridge call execute atomically and in order.
-      ;({ hash: bridgeHash } = await this._account.sendTransaction([...approvalTxs, bridgeTx], config))
+      let fee
+      ;({ hash: bridgeHash, fee } = await this._account.sendTransaction(
+        await this._buildErc4337Batch(quote, fromToken, fromAddress),
+        config
+      ))
+      erc4337NetworkFee = { amount: fee, token: this._resolveErc4337FeeToken(config), chain: fromChainId }
       const resolvedTxHash = await this._resolveUserOpTxHash(bridgeHash)
       txHashUnresolved = resolvedTxHash === null
       bridgeHash = resolvedTxHash ?? bridgeHash
@@ -326,7 +338,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
       id: bridgeHash,
       hash: bridgeHash,
       ...(txHashUnresolved && { txHashUnresolved: true }),
-      fees: this._buildFees(quote),
+      fees: this._buildFees(quote, erc4337NetworkFee),
       transactions,
       fromTokenAmount: BigInt(quote.estimate.fromAmount),
       toTokenAmount: BigInt(quote.estimate.toAmount),
@@ -579,28 +591,37 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     })
   }
 
-  // Maps LI.FI gasCosts and feeCosts to the SwidgeFee[] format:
-  // - gasCosts (SEND type) → type: 'network'
-  // - feeCosts             → type: 'protocol'
-  // token.chainId identifies the chain of the token in which the cost is
-  // charged or denominated. It does not necessarily identify the chain where
-  // the underlying execution or gas consumption occurs. If LI.FI omits it,
-  // leave the optional SwidgeFee.chain unset rather than guessing.
+  // Maps gasCosts (SEND) → 'network' and feeCosts → 'protocol'. erc4337NetworkFee,
+  // when given, overrides the gasCosts-derived entry: that estimate assumes a
+  // plain EOA tx and doesn't account for ERC-4337 verification/paymaster
+  // overhead or fee token.
+  // token.chainId is the fee's denomination chain, not necessarily the
+  // execution chain — leave SwidgeFee.chain unset rather than guess when omitted.
   /** @private */
-  _buildFees (quote) {
+  _buildFees (quote, erc4337NetworkFee) {
     const fees = []
 
-    for (const gc of (quote.estimate.gasCosts || [])) {
-      if (gc.type !== 'SEND') continue
+    if (erc4337NetworkFee) {
       fees.push({
         type: 'network',
-        amount: BigInt(gc.amount),
-        token: gc.token?.address || gc.token?.symbol || 'ETH',
-        ...(gc.token?.chainId !== undefined && gc.token?.chainId !== null
-          ? { chain: gc.token.chainId }
-          : {}),
-        description: gc.name || 'Network fee'
+        amount: erc4337NetworkFee.amount,
+        token: erc4337NetworkFee.token,
+        ...(erc4337NetworkFee.chain !== undefined ? { chain: erc4337NetworkFee.chain } : {}),
+        description: 'Network fee'
       })
+    } else {
+      for (const gc of (quote.estimate.gasCosts || [])) {
+        if (gc.type !== 'SEND') continue
+        fees.push({
+          type: 'network',
+          amount: BigInt(gc.amount),
+          token: gc.token?.address || gc.token?.symbol || 'ETH',
+          ...(gc.token?.chainId !== undefined && gc.token?.chainId !== null
+            ? { chain: gc.token.chainId }
+            : {}),
+          description: gc.name || 'Network fee'
+        })
+      }
     }
 
     for (const fc of (quote.estimate.feeCosts || [])) {
@@ -705,16 +726,45 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     if (currentAllowance > 0n) {
       transactions.push({
         to: token,
-        data: tokenContract.interface.encodeFunctionData('approve', [approvalAddress, 0n])
+        data: tokenContract.interface.encodeFunctionData('approve', [approvalAddress, 0n]),
+        value: 0n
       })
     }
 
     transactions.push({
       to: token,
-      data: tokenContract.interface.encodeFunctionData('approve', [approvalAddress, amount])
+      data: tokenContract.interface.encodeFunctionData('approve', [approvalAddress, amount]),
+      value: 0n
     })
 
     return transactions
+  }
+
+  /** @private */
+  async _quoteErc4337NetworkFee (quote, fromToken, fromAddress, config) {
+    const batch = await this._buildErc4337Batch(quote, fromToken, fromAddress)
+    const { fee } = await this._account.quoteSendTransaction(batch, config)
+    return fee
+  }
+
+  // Builds the full ERC-4337 batch — approval calls (if any) followed by the bridge call.
+  /** @private */
+  async _buildErc4337Batch (quote, fromToken, fromAddress) {
+    const approvalTxs = await this._buildApprovalTxs(
+      fromToken,
+      fromAddress,
+      quote.estimate.approvalAddress,
+      BigInt(quote.estimate.fromAmount),
+      quote.estimate.skipApproval
+    )
+    return [...approvalTxs, this._buildBridgeTx(quote)]
+  }
+
+  /** @private */
+  _resolveErc4337FeeToken (config) {
+    const merged = { ...this._account._config, ...config }
+    if (merged.isSponsored || merged.useNativeCoins) return NATIVE_TOKEN_ADDRESS
+    return merged.paymasterToken?.address || NATIVE_TOKEN_ADDRESS
   }
 
   // EOA approvals are separate transactions and must be confirmed before the
@@ -844,7 +894,8 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
   _isErc4337Account () {
     let proto = this._account
     while (proto && proto !== Object.prototype) {
-      if (proto.constructor?.name === 'WalletAccountEvmErc4337') return true
+      const name = proto.constructor?.name
+      if (name === 'WalletAccountEvmErc4337' || name === 'WalletAccountReadOnlyEvmErc4337') return true
       proto = Object.getPrototypeOf(proto)
     }
     return false
