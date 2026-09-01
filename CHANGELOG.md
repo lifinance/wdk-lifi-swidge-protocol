@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4
+
+### Patch Changes
+
+- [#10](https://github.com/lifinance/wdk-lifi-swidge-protocol/pull/10) [`8575e91`](https://github.com/lifinance/wdk-lifi-swidge-protocol/commit/8575e91e03d302cb9a240da0b99f81f50d8a8d6c) Thanks [@nulllpc](https://github.com/nulllpc)! - Quote ERC-4337 UserOperation fees from the final transaction batch, support read-only ERC-4337 accounts in the public types, and ensure approval calls are valid Safe multisend transactions.
+
 ## 0.5.3
 
 ### Patch Changes
