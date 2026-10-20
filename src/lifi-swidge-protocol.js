@@ -65,7 +65,7 @@ const USER_OP_RECEIPT_READ_TIMEOUT_MS = 15_000
 /**
  * @typedef {Object} LifiSwidgeProtocolConfig
  * @property {number | bigint} [maxNetworkFeeBps] - Maximum network fee as basis points of the input amount.
- *   Computed in USD terms since network fees are denominated in native token, not source token.
+ *   Computed in USD terms across native and ERC-20 fee tokens.
  *   If exceeded, `swidge()` throws before sending any transaction.
  * @property {number | bigint} [maxProtocolFeeBps] - Maximum LI.FI protocol fee as basis points of the input amount.
  *   Compared directly in source token units. If exceeded, `swidge()` throws before sending any transaction.
@@ -105,6 +105,31 @@ const ERC20_ABI = [
   'function approve(address spender, uint256 amount) returns (bool)'
 ]
 const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+
+function parseUnsignedDecimal (value) {
+  const match = String(value).trim().match(/^(\d+)(?:\.(\d+))?$/)
+  if (!match) return null
+  const fraction = match[2] || ''
+  return {
+    value: BigInt(match[1] + fraction),
+    scale: 10n ** BigInt(fraction.length)
+  }
+}
+
+function usdLimitToTokenAmount (fromAmountUSD, maxNetworkFeeBps, tokenPriceUSD, tokenDecimals) {
+  const from = parseUnsignedDecimal(fromAmountUSD)
+  const price = parseUnsignedDecimal(tokenPriceUSD)
+  const decimals = Number(tokenDecimals)
+  const bps = BigInt(maxNetworkFeeBps)
+
+  if (!from || from.value <= 0n || !price || price.value <= 0n ||
+      !Number.isInteger(decimals) || decimals < 0 || decimals > 255 || bps < 0n) {
+    return null
+  }
+
+  return (from.value * price.scale * bps * (10n ** BigInt(decimals))) /
+    (from.scale * price.value * 10_000n)
+}
 
 /**
  * Bridge protocols known to require native token value in the source transaction.
@@ -288,7 +313,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     }, effectiveConfig)
 
     this._checkMinAmountOut(quote, minAmountOut)
-    this._checkFeeCaps(quote, effectiveConfig)
+    this._checkFeeCaps(quote, effectiveConfig, this._isErc4337Account())
 
     // Validate before approval: an untrusted target must be rejected before
     // any allowance is granted, not just before the bridge tx is sent.
@@ -306,9 +331,15 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
       // A single UserOperation keeps the Safe nonce stable while ensuring the
       // allowance changes and bridge call execute atomically and in order.
       let fee
+      const erc4337Config = await this._buildErc4337SendConfig(
+        quote,
+        fromChainId,
+        effectiveConfig,
+        config
+      )
       ;({ hash: bridgeHash, fee } = await this._account.sendTransaction(
         await this._buildErc4337Batch(quote, fromToken, fromAddress),
-        config
+        erc4337Config
       ))
       erc4337NetworkFee = { amount: fee, token: this._resolveErc4337FeeToken(config), chain: fromChainId }
       const resolvedTxHash = await this._resolveUserOpTxHash(bridgeHash)
@@ -641,10 +672,10 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
   }
 
   // Enforces maxNetworkFeeBps and maxProtocolFeeBps. Protocol fees compare in
-  // source token units (same denomination as fromAmount); network fees compare
-  // via USD since they are denominated in native token.
+  // source token units (same denomination as fromAmount). EOA network fees use
+  // LI.FI's USD estimate; ERC-4337 fees use WDK's atomic transactionMaxFee.
   /** @private */
-  _checkFeeCaps (quote, effectiveConfig) {
+  _checkFeeCaps (quote, effectiveConfig, skipNetworkFee = false) {
     const { maxProtocolFeeBps, maxNetworkFeeBps } = effectiveConfig || {}
     if (maxProtocolFeeBps === undefined && maxNetworkFeeBps === undefined) return
 
@@ -659,7 +690,7 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
       }
     }
 
-    if (maxNetworkFeeBps !== undefined) {
+    if (maxNetworkFeeBps !== undefined && !skipNetworkFee) {
       const fromAmountUSD = parseFloat(quote.estimate.fromAmountUSD || 0)
       if (fromAmountUSD > 0) {
         const totalNetworkFeeUSD = (quote.estimate.gasCosts || [])
@@ -765,6 +796,46 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     const merged = { ...this._account._config, ...config }
     if (merged.isSponsored || merged.useNativeCoins) return NATIVE_TOKEN_ADDRESS
     return merged.paymasterToken?.address || NATIVE_TOKEN_ADDRESS
+  }
+
+  /** @private */
+  async _buildErc4337SendConfig (quote, fromChainId, effectiveConfig, config) {
+    const { maxNetworkFeeBps } = effectiveConfig
+    if (maxNetworkFeeBps === undefined) return config
+
+    const mergedWalletConfig = { ...this._account._config, ...config }
+    let transactionMaxFee
+
+    if (mergedWalletConfig.isSponsored) {
+      transactionMaxFee = 0n
+    } else {
+      const feeToken = this._resolveErc4337FeeToken(config)
+      const params = new URLSearchParams({ chain: String(fromChainId), token: feeToken })
+      const token = await this._request('/token', params, {
+        errorClass: LifiQuoteError,
+        errorPrefix: `Failed to price ERC-4337 fee token ${feeToken}`
+      })
+
+      transactionMaxFee = usdLimitToTokenAmount(
+        quote.estimate.fromAmountUSD,
+        maxNetworkFeeBps,
+        token?.priceUSD,
+        token?.decimals
+      )
+
+      if (transactionMaxFee === null) {
+        throw new LifiExecutionError(
+          `Cannot enforce maxNetworkFeeBps: no reliable USD price or decimals for ERC-4337 fee token ${feeToken}.`
+        )
+      }
+    }
+
+    if (mergedWalletConfig.transactionMaxFee !== undefined) {
+      const configuredMaxFee = BigInt(mergedWalletConfig.transactionMaxFee)
+      if (configuredMaxFee < transactionMaxFee) transactionMaxFee = configuredMaxFee
+    }
+
+    return { ...config, transactionMaxFee }
   }
 
   // EOA approvals are separate transactions and must be confirmed before the

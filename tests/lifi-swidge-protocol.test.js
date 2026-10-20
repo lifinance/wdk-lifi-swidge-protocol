@@ -197,6 +197,21 @@ function mockFetch (overrides = {}) {
   })
 }
 
+function mockFetchWithFeeToken (feeToken, tokenInfo) {
+  global.fetch = jest.fn().mockImplementation((url) => {
+    if (url.includes('/tokens')) {
+      return Promise.resolve({ ok: true, json: async () => DUMMY_TOKENS })
+    }
+    if (url.includes('/token?') && url.toLowerCase().includes(feeToken.toLowerCase())) {
+      return Promise.resolve({ ok: true, json: async () => tokenInfo })
+    }
+    if (url.includes('/token')) {
+      return Promise.resolve({ ok: true, json: async () => DUMMY_SOURCE_TOKEN })
+    }
+    return Promise.resolve({ ok: true, json: async () => DUMMY_QUOTE })
+  })
+}
+
 // ─── EOA account suite ────────────────────────────────────────────────────────
 
 describe('@lifi/wdk-protocol-swidge-lifi', () => {
@@ -1112,7 +1127,8 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
     beforeEach(() => {
       account = new WalletAccountEvmErc4337(SEED, "0'/0/0", {
         chainId: 1,
-        provider: 'https://dummy-rpc-url.com'
+        provider: 'https://dummy-rpc-url.com',
+        safeModulesVersion: '0.3.0'
       })
       // The ERC-4337 address is a counterfactual smart-account address (not the
       // EOA derivation), so it is mocked rather than derived.
@@ -1322,7 +1338,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
       test('throws LifiReadOnlyAccountError when ERC-4337 account is read-only', async () => {
         const readOnly = new LifiSwidgeProtocol(
           new WalletAccountReadOnlyEvmErc4337(USER_ADDRESS, {
-            chainId: 1, provider: 'https://dummy-rpc-url.com'
+            chainId: 1, provider: 'https://dummy-rpc-url.com', safeModulesVersion: '0.3.0'
           })
         )
 
@@ -1336,6 +1352,86 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
           { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
           { maxProtocolFeeBps: 1 }
         )).rejects.toThrow('Protocol fee exceeds maxProtocolFeeBps limit.')
+      })
+
+      test('converts maxNetworkFeeBps to an atomic ERC-20 paymaster transactionMaxFee', async () => {
+        account._config.paymasterToken = { address: PAYMASTER_TOKEN }
+        mockFetchWithFeeToken(PAYMASTER_TOKEN, {
+          address: PAYMASTER_TOKEN, decimals: 6, priceUSD: '2.00'
+        })
+
+        await protocol.swidge(
+          { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
+          { maxNetworkFeeBps: 100 }
+        )
+
+        expect(account.sendTransaction).toHaveBeenCalledWith(
+          expect.any(Array),
+          expect.objectContaining({ transactionMaxFee: 5_000n })
+        )
+      })
+
+      test('converts maxNetworkFeeBps to an atomic native transactionMaxFee', async () => {
+        account._config.useNativeCoins = true
+        mockFetchWithFeeToken(NATIVE_TOKEN_ADDRESS, {
+          address: NATIVE_TOKEN_ADDRESS, decimals: 18, priceUSD: '2000'
+        })
+
+        await protocol.swidge(
+          { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
+          { maxNetworkFeeBps: 100 }
+        )
+
+        expect(account.sendTransaction).toHaveBeenCalledWith(
+          expect.any(Array),
+          expect.objectContaining({ transactionMaxFee: 5_000_000_000_000n })
+        )
+      })
+
+      test('keeps a stricter wallet transactionMaxFee', async () => {
+        account._config.paymasterToken = { address: PAYMASTER_TOKEN }
+        account._config.transactionMaxFee = 1_000n
+        mockFetchWithFeeToken(PAYMASTER_TOKEN, {
+          address: PAYMASTER_TOKEN, decimals: 6, priceUSD: '2.00'
+        })
+
+        await protocol.swidge(
+          { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
+          { maxNetworkFeeBps: 100 }
+        )
+
+        expect(account.sendTransaction).toHaveBeenCalledWith(
+          expect.any(Array),
+          expect.objectContaining({ transactionMaxFee: 1_000n })
+        )
+      })
+
+      test('treats sponsored ERC-4337 fees as zero without requiring price data', async () => {
+        account._config.isSponsored = true
+
+        await protocol.swidge(
+          { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
+          { maxNetworkFeeBps: 1 }
+        )
+
+        expect(account.sendTransaction).toHaveBeenCalledWith(
+          expect.any(Array),
+          expect.objectContaining({ transactionMaxFee: 0n })
+        )
+      })
+
+      test('fails closed when the ERC-4337 fee token cannot be priced', async () => {
+        account._config.paymasterToken = { address: PAYMASTER_TOKEN }
+        mockFetchWithFeeToken(PAYMASTER_TOKEN, {
+          address: PAYMASTER_TOKEN, decimals: 6
+        })
+
+        await expect(protocol.swidge(
+          { fromToken: TOKEN, toToken: TOKEN, toChain: 'arbitrum', fromTokenAmount: 1_000_000n },
+          { maxNetworkFeeBps: 100 }
+        )).rejects.toThrow('Cannot enforce maxNetworkFeeBps')
+
+        expect(account.sendTransaction).not.toHaveBeenCalled()
       })
 
       test('reports the network fee sendTransaction already quoted for the batch, in the paymaster token', async () => {
@@ -1503,6 +1599,7 @@ describe('@lifi/wdk-protocol-swidge-lifi', () => {
       account = new WalletAccountReadOnlyEvmErc4337(USER_ADDRESS, {
         chainId: 1,
         provider: 'https://dummy-rpc-url.com',
+        safeModulesVersion: '0.3.0',
         paymasterToken: { address: PAYMASTER_TOKEN }
       })
       protocol = new LifiSwidgeProtocol(account)

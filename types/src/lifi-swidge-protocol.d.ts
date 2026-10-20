@@ -116,6 +116,8 @@ export default class LifiSwidgeProtocol extends SwidgeProtocol {
     /** @private */
     private _resolveErc4337FeeToken;
     /** @private */
+    private _buildErc4337SendConfig;
+    /** @private */
     private _handleApproval;
     /**
      * Bounds an individual bundler receipt read. The underlying ERC-4337
@@ -185,7 +187,7 @@ export type SwidgeStatusOptions = {
 export type LifiSwidgeProtocolConfig = {
     /**
      * - Maximum network fee as basis points of the input amount.
-     * Computed in USD terms since network fees are denominated in native token, not source token.
+     * Computed in USD terms across native and ERC-20 fee tokens.
      * If exceeded, `swidge()` throws before sending any transaction.
      */
     maxNetworkFeeBps?: number | bigint | undefined;
