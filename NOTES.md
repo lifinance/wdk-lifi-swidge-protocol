@@ -36,9 +36,9 @@ Fees are always returned as a populated `SwidgeFee[]` array. There is no aggrega
 
 `APPROVE`-type costs are excluded because including them would inflate the quoted fee for wallets that already have a valid allowance.
 
-**Denomination matters.** `network` fees are in native token wei (ETH, MATIC); `protocol` fees are in source token base units. The `token` field on each fee entry identifies which denomination applies. Wallet UIs need to handle both when rendering.
+**Denomination matters.** EOA `network` fees are in native token wei (ETH, MATIC), while ERC-4337 network fees may be native, ERC-20 paymaster-token units, or zero when sponsored. `protocol` fees are in source token base units. The `token` field on each fee entry identifies which denomination applies.
 
-**Fee caps** (`maxNetworkFeeBps`, `maxProtocolFeeBps`) are in basis points of the input amount and checked after the quote, before any transaction. Protocol fees use a direct bigint comparison since they share the source token's denomination. Network fees require a USD-based comparison because gas is in native token while the input is in the source token — we use the USD values LI.FI includes in the quote response for this.
+**Fee caps** (`maxNetworkFeeBps`, `maxProtocolFeeBps`) are in basis points of the input amount and checked before submission. Protocol fees use a direct bigint comparison because they share the source token's denomination. EOA network fees use the USD values in LI.FI's quote. ERC-4337 converts the same USD cap into the configured fee token and passes it to WDK as `transactionMaxFee`, so WDK checks its final UserOperation quote atomically before submission. Missing ERC-4337 fee-token price data fails closed when the cap is enabled.
 
 ---
 
